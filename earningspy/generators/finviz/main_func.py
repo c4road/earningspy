@@ -2,8 +2,8 @@ from datetime import datetime
 
 from lxml import etree
 
-from earningspy.helper_functions.request_functions import http_request_get
-from earningspy.helper_functions.scraper_functions import get_table
+from earningspy.generators.finviz.helper_functions.request_functions import http_request_get
+from earningspy.generators.finviz.helper_functions.scraper_functions import get_table
 
 STOCK_URL = "https://finviz.com/quote.ashx"
 NEWS_URL = "https://finviz.com/news.ashx"

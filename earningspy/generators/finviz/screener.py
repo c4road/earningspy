@@ -7,13 +7,13 @@ from urllib.parse import urlencode, urlparse
 from bs4 import BeautifulSoup
 from user_agent import generate_user_agent
 
-import earningspy.helper_functions.scraper_functions as scrape
-from earningspy.helper_functions.display_functions import create_table_string
-from earningspy.helper_functions.error_handling import InvalidTableType, NoResults
-from earningspy.helper_functions.request_functions import (Connector,
+import earningspy.generators.finviz.helper_functions.scraper_functions as scrape
+from earningspy.generators.finviz.helper_functions.display_functions import create_table_string
+from earningspy.generators.finviz.helper_functions.error_handling import InvalidTableType, NoResults
+from earningspy.generators.finviz.helper_functions.request_functions import (Connector,
                                                        http_request_get,
                                                        sequential_data_scrape)
-from earningspy.helper_functions.save_data import export_to_csv, export_to_db
+from earningspy.generators.finviz.helper_functions.save_data import export_to_csv, export_to_db
 
 TABLE_TYPES = {
     "Overview": "111",

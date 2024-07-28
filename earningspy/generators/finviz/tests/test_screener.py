@@ -3,8 +3,8 @@ from unittest.mock import patch
 import lxml
 from dateutil.parser import parse
 
-from earningspy.main_func import get_all_news, get_analyst_price_targets
-from earningspy.screener import Screener
+from earningspy.generators.finviz.main_func import get_all_news, get_analyst_price_targets
+from earningspy.generators.finviz.screener import Screener
 
 
 class TestScreener:

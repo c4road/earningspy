@@ -1,16 +1,16 @@
 import pandas as pd
 from datetime import datetime
-from generators.finviz.utils import (
+from earningspy.generators.finviz.utils import (
     get_filters,
     get_dataframe_by_industry,
     get_dataframe_by_sector,
     get_dataframe_by_index,
 )
-from generators.finviz.constants import (
+from earningspy.generators.finviz.constants import (
     CUSTOM_TABLE_ALL_FIELDS,
 )
 from dateutil.relativedelta import relativedelta
-from earnings_calendar.constants import (
+from earningspy.earnings_calendar.constants import (
     LOCAL_EARNINGS_CALENDAR_FOLDER,
     TRACKED_INDUSTRIES,
     DEFAULT_TABLE,
@@ -20,7 +20,7 @@ from earnings_calendar.constants import (
     DAYS_TO_EARNINGS_KEY, 
     DEFAULT_LOCAL_CALENDAR_FILE,
 )
-from config import Config
+from earningspy.config import Config
 
 config = Config()
 
@@ -43,7 +43,8 @@ class MasterEarningsCalendar:
         URL = 'https://www.alphavantage.co/query?function=EARNINGS_CALENDAR&apikey={}'.format(
             api_key)
         if csv:
-            file_path = f'{earnings_calendar_folder}/{local_file}'
+            # file_path = f'./{earnings_calendar_folder}/{local_file}'
+            file_path = f'~/Documents/Devs/earningspy/earningspy/local_data/{local_file}'
             data = pd.read_csv(file_path)
             data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
             data[DAYS_TO_EARNINGS_KEY] = data[EARNINGS_DATE_KEY].apply(cls._compute_days_left)
@@ -108,8 +109,7 @@ class EarningSpy:
         
         finviz_data = cls.get_finviz(sector=sector, 
                                      industry=industry, 
-                                     index=index, 
-                                     scope=scope)
+                                     index=index)
 
         earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, scope=scope)
         finviz_calendar = cls.merge_finviz_and_earnings_calendar(

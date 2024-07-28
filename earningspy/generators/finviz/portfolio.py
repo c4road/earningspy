@@ -4,12 +4,12 @@ import requests
 from lxml import html
 from user_agent import generate_user_agent
 
-from earningspy.helper_functions.display_functions import create_table_string
-from earningspy.helper_functions.error_handling import (InvalidPortfolioID,
+from earningspy.generators.finviz.helper_functions.display_functions import create_table_string
+from earningspy.generators.finviz.helper_functions.error_handling import (InvalidPortfolioID,
                                                     InvalidTicker,
                                                     NonexistentPortfolioName)
-from earningspy.helper_functions.request_functions import http_request_get
-from earningspy.helper_functions.scraper_functions import get_table
+from earningspy.generators.finviz.helper_functions.request_functions import http_request_get
+from earningspy.generators.finviz.helper_functions.scraper_functions import get_table
 
 LOGIN_URL = "https://finviz.com/login_submit.ashx"
 PRICE_REQUEST_URL = "https://finviz.com/request_quote.ashx"

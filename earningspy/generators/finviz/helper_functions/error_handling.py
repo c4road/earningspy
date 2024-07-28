@@ -1,4 +1,4 @@
-from earningspy.config import connection_settings
+from earningspy.generators.finviz.config import connection_settings
 
 
 class NoResults(Exception):

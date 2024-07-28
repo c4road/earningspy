@@ -1,8 +1,8 @@
-from screener import Screener
+from earningspy.generators.finviz.screener import Screener
 import pandas as pd
 from pprint import pprint as pp
 import numpy as np
-from generators.finviz.constants import (
+from earningspy.generators.finviz.constants import (
     PERFORMANCE_TABLE_ALL_FIELDS,
     CUSTOM_TABLE_ALL_FIELDS,
     CUSTOM_TABLE_FIELDS_ON_URL,

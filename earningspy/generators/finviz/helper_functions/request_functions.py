@@ -11,8 +11,8 @@ from requests import Response
 from tqdm import tqdm
 from user_agent import generate_user_agent
 
-from earningspy.config import connection_settings
-from earningspy.helper_functions.error_handling import ConnectionTimeout
+from earningspy.generators.finviz.config import connection_settings
+from earningspy.generators.finviz.helper_functions.error_handling import ConnectionTimeout
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
