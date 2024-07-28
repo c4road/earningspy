@@ -1,0 +1,11 @@
+finviz~=1.4.4
+beautifulsoup4~=4.9.3
+requests~=2.25.1
+aiohttp~=3.7.4
+lxml==5.2.2  # old 4.2.4
+urllib3~=1.26.5
+user_agent~=0.1.9
+cssselect~=1.1.0
+tqdm~=4.61.1
+tenacity~=7.0.0
+python-dotenv==1.0.1
