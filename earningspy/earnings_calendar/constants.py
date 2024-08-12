@@ -136,7 +136,7 @@ FINVIZ_RAW_DATA_FOLDER = '/FinvizRawData'
 DEFAULT_BEFORE_EARNINGS_DATE_DAYS=1
 DEFAULT_AFTER_EARNINGS_DATE_DAYS=5
 # Default ranges to calculate pct and diff (days_before, days_after)
-RANGES = [(1, 0), (1, 2), (1, 3), (1, 5), (1, 8), (1, 13), (1, 21)]
+RANGES = [(1, 1), (1, 15), (1, 25)]
 
 
 ALL_STOCK_INDUSTRIES = [

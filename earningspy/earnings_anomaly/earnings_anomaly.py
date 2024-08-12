@@ -3,57 +3,44 @@ from dateutil.relativedelta import relativedelta
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from earnings_calendar.constants import (
+from earningspy.generators.yahoo.time_series import get_portfolio
+
+from earningspy.earnings_calendar.constants import (
     DEFAULT_BEFORE_EARNINGS_DATE_DAYS,
     DEFAULT_AFTER_EARNINGS_DATE_DAYS,
     RANGES,
+    DAYS_TO_EARNINGS_KEY
 )
 
 
-class AnomalyDataGenerator:
+class AnomalyInspector:
 
     def __init__(self, 
-                 calendar=None, 
-                 price_history=None, 
-                 price_history_from_file=False, 
-                 price_history_file=None):
+                 calendar=None):
 
         self._calendar = calendar
-        if price_history_from_file and price_history_file:
-            self.price_history = self.read_price_history_from_file(price_history_file)
-        elif price_history_from_file and not price_history_file:
-            raise Exception("Need price_history_file if price_history_from_file is True")
-        else:
-            self.price_history = price_history
+        self.price_history = None
+        self.target = None
 
     def _get_price_history(self):
-        pass
+        assets = self.target['Ticker'].to_list()
+        return get_portfolio(assets, from_='3m')
     
     @property
     def calendar(self):
-        self._calendar.sort_values('days_left', ascending=True)
+        self._calendar.sort_values(DAYS_TO_EARNINGS_KEY, ascending=True)
         return self._calendar
-        
-    def read_price_history_from_file(self, price_history_path):
-        """
-        Currently this is only compatible with price history coming from TDAmeritrade
-        """
-        
-        df = pd.read_csv(price_history_path, index_col='Datetime')
-        df.index = pd.to_datetime(df.index)
-        return df
 
     def earnings_report_range_price_change(self,
-                                           before=DEFAULT_BEFORE_EARNINGS_DATE_DAYS,
-                                           after=DEFAULT_AFTER_EARNINGS_DATE_DAYS,
-                                           pct=False):
+                                           before,
+                                           after):
 
-        self.calendar.reset_index(inplace=True)
-        self.calendar.set_index('Ticker', inplace=True)
+        self.target.reset_index(inplace=True)
+        self.target.set_index('Ticker', inplace=True)
         for ticker in self.price_history.columns:
 
             try:
-                report_date = self.calendar.loc[ticker, 'reportDate'].date()
+                report_date = self.target.loc[ticker, 'reportDate'].date()
             except (KeyError, AttributeError):
                 print('Unable to get report date for ticker={}'.format(ticker))
                 continue
@@ -62,27 +49,22 @@ class AnomalyDataGenerator:
                                                                  report_date=report_date,
                                                                  before=before,
                                                                  after=after)
-            diff_column_name = 'diff'
             pct_column_name = 'pct'
             if price_range.empty:
                 print(f"Price range is empty for {ticker}, report_date={report_date}")
                 continue
             try:
-                diff = (price_range.iloc[-1] - price_range.iloc[0])
+                pct_value = (price_range.iloc[-1] - price_range.iloc[0]) / price_range.iloc[0]
+                # self.target.loc[ticker, f'{before}-{after} {pct_column_name}'] = pct_value
+                self.target.loc[ticker:, f'{before}-{after} {pct_column_name}'] = pct_value
             except IndexError:
                 print('Unable to get price range diff for {}'.format(ticker))
                 continue
 
-            if pct:
-                pct_value = diff / price_range.iloc[0]
-                self.calendar.loc[ticker, f'{before}-{after} {pct_column_name}'] = pct_value
-            else:
-                self.calendar.loc[ticker, f'{before}-{after} {diff_column_name}'] = diff
+        self.target.reset_index(inplace=True)
+        self.target.set_index('reportDate', inplace=True)
 
-        self.calendar.reset_index(inplace=True)
-        self.calendar.set_index('reportDate', inplace=True)
-
-        return self.calendar
+        return self.target
     
     def process_ticker_with_several_dates(self): 
         pass
@@ -91,8 +73,7 @@ class AnomalyDataGenerator:
                                           ticker,
                                           report_date,
                                           before=DEFAULT_BEFORE_EARNINGS_DATE_DAYS,
-                                          after=DEFAULT_AFTER_EARNINGS_DATE_DAYS,
-                                          plot=False):
+                                          after=DEFAULT_AFTER_EARNINGS_DATE_DAYS):
 
         date_before, date_after = self.get_report_date_range(report_date,
                                                              before,
@@ -138,20 +119,33 @@ class AnomalyDataGenerator:
         return str(date_before), str(date_after)
 
     def insert_report_pct_change_ranges(self,
-                                        ranges=RANGES,
-                                        pct=False):
+                                        ranges=RANGES):
 
         for before, after in ranges:
-            self.earnings_report_range_price_change(before=before, after=after, pct=pct)
+            self.earnings_report_range_price_change(before=before, after=after)
 
-    def prepare(self, pct=False): 
-        
-        self.insert_report_pct_change_ranges(pct=pct)
-        
-        return self.calendar
+    def _get_anomaly(self, value):
+        if value > 0.1:
+            return 1
+        if value < -0.1:
+            return -1
+        else:
+            return 0
+
+    def prepare(self, days_target=21):
+
+        self.target = self._calendar[(self.calendar[DAYS_TO_EARNINGS_KEY] < 0) &
+                                     (self.calendar[DAYS_TO_EARNINGS_KEY] < -days_target)]
+        self.price_history = self._get_price_history()
+        self.insert_report_pct_change_ranges()
+        self._calendar = self.calendar.drop(((self.calendar[DAYS_TO_EARNINGS_KEY] < 0) &
+                                            (self.calendar[DAYS_TO_EARNINGS_KEY] < -days_target)).index, axis=0)
+        self.target['is_anomaly'] = self.target['1-1 pct'].apply(self._get_anomaly)
+        self.target['is_alpha'] = self.target['1-25 pct'].apply(self._get_anomaly)
+        return self.target
 
     def update_price(self, price_history):
-
+ 
         current_prices = price_history.iloc[-1]
         for col in price_history.columns:
             self.calendar.loc[col]['Price'] = current_prices[col]
