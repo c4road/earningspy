@@ -62,6 +62,8 @@ def get_dataframe_by_industry(industry=None,
         pp(get_filters('Industry'))
         return
     filters = get_filters('Industry').get(industry)
+    if not filters:
+        raise Exception("Unable to get Industry: Invalid industry code")
     if table == 'Custom':
         data = _get_data_frame_with_custom_fields(filters, order=order)
     else:
@@ -79,7 +81,7 @@ def get_dataframe_by_index(index=None,
         return
     filters = get_filters('Index').get(index)
     if not filters:
-        print(f'No valid index. Valid indexes: {get_filters("Index")}')
+        raise Exception("Unable to get Index: Invalid index code")
     if table == 'Custom':
         data = _get_data_frame_with_custom_fields(filters, order=order)
     else:
@@ -96,7 +98,7 @@ def get_dataframe_by_sector(sector=None,
         return
     filters = get_filters('Sector').get(sector)
     if not filters:
-        print(f'No valid sector. Valid sectors: {get_filters("Sector")}')
+        raise Exception("Unable to get sector: Invalid sector code")
     if table == 'Custom':
         data = _get_data_frame_with_custom_fields(filters, order=order)
     else:
@@ -110,7 +112,7 @@ def get_dataframe_by_exchange(exchange=None, table='Performance', order='marketc
         return
     filters = get_filters('Exchange').get(exchange)
     if not filters:
-        print(f'No valid exchange. Valid exchanges: {get_filters("Exchange")}')
+        raise Exception("Unable to get exchange: Invalid exchange code")
     return _get_dataframe(filters, table=table, order=order, details=details)
 
 def _process_money_value(value):

@@ -9,6 +9,7 @@ from earningspy.generators.finviz.utils import (
 from earningspy.generators.finviz.constants import (
     CUSTOM_TABLE_ALL_FIELDS,
 )
+import importlib.resources as pkg_resources
 from dateutil.relativedelta import relativedelta
 from earningspy.earnings_calendar.constants import (
     LOCAL_EARNINGS_CALENDAR_FOLDER,
@@ -17,8 +18,7 @@ from earningspy.earnings_calendar.constants import (
     EARNINGS_DATE_KEY,
     TICKER_KEY,
     DEFAULT_DATE_FORMAT,
-    DAYS_TO_EARNINGS_KEY, 
-    DEFAULT_LOCAL_CALENDAR_FILE,
+    DAYS_TO_EARNINGS_KEY
 )
 from earningspy.config import Config
 
@@ -29,8 +29,7 @@ class MasterEarningsCalendar:
     @classmethod
     def get_whole_earnings_calendar(cls, 
                                     csv=False, 
-                                    horizon='12month', 
-                                    local_file=DEFAULT_LOCAL_CALENDAR_FILE):
+                                    horizon='12month'):
         """
         doc: https://www.alphavantage.co/documentation/#earnings-calendar
         This functions makes a csv requests and transform the csv into a dataframe.
@@ -38,14 +37,13 @@ class MasterEarningsCalendar:
         horizons = default 3months, choices=6month,12month
 
         """
-        earnings_calendar_folder = LOCAL_EARNINGS_CALENDAR_FOLDER
         api_key = config.ALPHA_VANTAGE_API_KEY
+        if not api_key:
+            raise Exception('Unable to find ALPHAVANTAGE_API_KEY')
         URL = 'https://www.alphavantage.co/query?function=EARNINGS_CALENDAR&apikey={}'.format(
-            api_key)
+            api_key) 
         if csv:
-            # file_path = f'./{earnings_calendar_folder}/{local_file}'
-            file_path = f'~/Documents/Devs/earningspy/earningspy/local_data/{local_file}'
-            data = pd.read_csv(file_path)
+            data = cls._get_local_historic_earnings_calendar()
             data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
             data[DAYS_TO_EARNINGS_KEY] = data[EARNINGS_DATE_KEY].apply(cls._compute_days_left)
             data = data.set_index(EARNINGS_DATE_KEY, drop=True)
@@ -97,6 +95,17 @@ class MasterEarningsCalendar:
         diff = earnings_date - today
         return int(diff.days)
 
+    @classmethod
+    def _get_local_historic_earnings_calendar(cls):
+        """
+        Loads a CSV file from the package and returns a DataFrame.
+
+        :param file_name: Name of the CSV file (e.g., 'config.csv').
+        :return: Pandas DataFrame with the contents of the CSV.
+        """
+        file_name = config.LOCAL_HISTORIC_EARNINGS_CALENDAR
+        with pkg_resources.open_text('earningspy.local_data', file_name) as csv_file:
+            return pd.read_csv(csv_file)
 
 class EarningSpy:
 
@@ -105,13 +114,19 @@ class EarningSpy:
         return get_filters(*args, **kwargs)
     
     @classmethod
-    def get_calendar(cls, sector=None, industry=None, index=None, scope=(-90, 90)):
+    def get_calendar(cls, sector=None, industry=None, index=None, scope=(-90, 90), prefer_local=True):
+        """
+        :param bool prefer_local: Will make a API call to alpha vantage instead of using local file
+                                  this means you wont get the old post earning ones
+        """
         
         finviz_data = cls.get_finviz(sector=sector, 
                                      industry=industry, 
                                      index=index)
 
-        earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, scope=scope)
+        earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
+                                                         scope=scope, 
+                                                         prefer_local=prefer_local)
         finviz_calendar = cls.merge_finviz_and_earnings_calendar(
                 earnings_calendar=earnings_calendar, 
                 finviz_data=finviz_data, 
@@ -206,13 +221,14 @@ class EarningSpy:
     @classmethod
     def get_earning_calendar_for(cls, 
                                  symbols,
-                                 scope=(-90, 90)):
+                                 scope=(-90, 90),
+                                 prefer_local=True):
         """
         :symbols list of symbols 
         :scope 
 
         """
-        data = MasterEarningsCalendar.get_whole_earnings_calendar(csv=True)
+        data = MasterEarningsCalendar.get_whole_earnings_calendar(csv=prefer_local)
         results = data[data['symbol'].isin(symbols)]
         if not scope:
             return results.sort_index()

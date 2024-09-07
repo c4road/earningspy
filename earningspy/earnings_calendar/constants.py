@@ -1,5 +1,4 @@
 LOCAL_EARNINGS_CALENDAR_FOLDER = 'local_data'
-DEFAULT_LOCAL_CALENDAR_FILE = 'from-Feb2023EarningsCalendar.csv'
 POST_PROCESSED_COLUMNS = [
     'Ticker',
     'Company',
