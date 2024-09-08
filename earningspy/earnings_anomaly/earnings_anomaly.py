@@ -124,10 +124,11 @@ class AnomalyInspector:
         for before, after in ranges:
             self.earnings_report_range_price_change(before=before, after=after)
 
-    def _get_anomaly(self, value):
-        if value > 0.1:
+    def _get_anomaly(self, value, anomaly_threshold=0.1):
+
+        if value > anomaly_threshold:
             return 1
-        if value < -0.1:
+        if value < -anomaly_threshold:
             return -1
         else:
             return 0
