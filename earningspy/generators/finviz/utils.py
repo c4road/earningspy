@@ -72,6 +72,31 @@ def get_dataframe_by_industry(industry=None,
         data.loc['Industry'] = industry
     return data
 
+
+def get_micro_caps_data(order='marketcap'):
+
+    micro_caps_filter = 'cap_micro'
+    data = _get_data_frame_with_custom_fields(micro_caps_filter, order=order)
+    data.loc['Index'] = 'Micro'
+    return data
+
+
+def get_small_caps_data(order='marketcap'):
+    
+    small_caps_filter = 'cap_small'
+    data = _get_data_frame_with_custom_fields(small_caps_filter, order=order)
+    data.loc['Index'] = 'Small'
+    return data
+
+
+def get_medium_caps_data(order='marketcap'):
+
+    medium_caps_filter = 'cap_mid'
+    data = _get_data_frame_with_custom_fields(medium_caps_filter, order=order)
+    data.loc['Index'] = 'Medium'
+    return data
+
+
 def get_dataframe_by_index(index=None, 
                            table='Performance', 
                            order='marketcap', 

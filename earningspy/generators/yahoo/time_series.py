@@ -1,7 +1,7 @@
+from time import sleep
+import requests
 from datetime import datetime as dt
 from dateutil.relativedelta import relativedelta
-import io
-import requests
 import pandas as pd
 from tqdm import tqdm
 
@@ -47,11 +47,16 @@ def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date())
 
     for i, asset in tqdm(enumerate(assets), total = len(assets)):
         ticker_data = get_one_ticker(asset, from_=from_, start_date=start_date, end_date=end_date)
+        if ticker_data is None:
+            continue
         close_data = prepare_data(ticker_data, asset).reset_index()
         if i == 0:
             portfolio = close_data[['Date', asset]]
             continue
+        elif asset in portfolio.columns:
+            continue
         portfolio = pd.concat([portfolio, close_data[asset]], axis=1)
+        sleep(1)
 
     portfolio = portfolio.set_index('Date')
     portfolio.index = pd.to_datetime(portfolio.index)
@@ -85,8 +90,10 @@ def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date())
         data.index = data.index.normalize()
         return data.round(2)
     else:
-        print(response.text)
-        raise Exception(f'Could not retrieve data:{response.status_code}')
+        err = Exception(f'Could not retrieve data for {asset}:{response.text}')
+        print(str(err))
+        return None
+
     
 def prepare_data(data, ticker):
     data = data.drop(['open', 'high', 'low', 'volume'], axis=1)

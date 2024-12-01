@@ -5,6 +5,9 @@ from earningspy.generators.finviz.utils import (
     get_dataframe_by_industry,
     get_dataframe_by_sector,
     get_dataframe_by_index,
+    get_micro_caps_data,
+    get_small_caps_data,
+    get_medium_caps_data,
 )
 from earningspy.generators.finviz.constants import (
     CUSTOM_TABLE_ALL_FIELDS,
@@ -14,11 +17,11 @@ from dateutil.relativedelta import relativedelta
 from earningspy.earnings_calendar.constants import (
     LOCAL_EARNINGS_CALENDAR_FOLDER,
     TRACKED_INDUSTRIES,
-    DEFAULT_TABLE,
     EARNINGS_DATE_KEY,
     TICKER_KEY,
     DEFAULT_DATE_FORMAT,
-    DAYS_TO_EARNINGS_KEY
+    DAYS_TO_EARNINGS_KEY,
+    DEFAULT_DAYS_PRE_EARNINGS
 )
 from earningspy.config import Config
 
@@ -129,10 +132,7 @@ class EarningSpy:
                                                          prefer_local=prefer_local)
         finviz_calendar = cls.merge_finviz_and_earnings_calendar(
                 earnings_calendar=earnings_calendar, 
-                finviz_data=finviz_data, 
-                table=DEFAULT_TABLE, 
-                industry=industry, 
-                index=index)
+                finviz_data=finviz_data)
  
         return finviz_calendar
 
@@ -192,20 +192,10 @@ class EarningSpy:
     @classmethod
     def merge_finviz_and_earnings_calendar(cls, 
                                            earnings_calendar, 
-                                           finviz_data, 
-                                           table=DEFAULT_TABLE,
-                                           sort_value=DAYS_TO_EARNINGS_KEY, 
-                                           industry=False,
-                                           index=False):
+                                           finviz_data,
+                                           sort_value=DAYS_TO_EARNINGS_KEY):
 
-        columns = CUSTOM_TABLE_ALL_FIELDS
-    
-        if industry and 'Industry' not in columns:
-            columns.append('Industry')
-        elif index and 'Index' not in columns:
-            columns.append('Index')
-
-        filtered_data = finviz_data.T[columns]
+        filtered_data = finviz_data.T[CUSTOM_TABLE_ALL_FIELDS]
         earnings_calendar = earnings_calendar.rename(columns={'symbol': TICKER_KEY})
         earnings_calendar = earnings_calendar.reset_index()
         earnings_calendar = earnings_calendar.merge(
@@ -239,6 +229,30 @@ class EarningSpy:
 
         return results.sort_index()
     
+    @classmethod
+    def get_micro_small_medium_caps(cls, cap='micro', scope=(-15, 5), prefer_local=False):
+
+        if cap not in ['micro', 'small', 'medium', 'all']:
+            raise Exception("Invalid scope valid scopes ['micro', 'small', 'medium', 'all']")
+        
+        factory = {
+            'micro': get_micro_caps_data,
+            'small': get_small_caps_data,
+            'medium': get_medium_caps_data, 
+        }
+
+        finviz_data = factory[cap](order='marketcap')
+        calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
+                                                scope=scope, 
+                                                prefer_local=prefer_local)
+
+        finviz_calendar = cls.merge_finviz_and_earnings_calendar(
+            earnings_calendar=calendar, 
+            finviz_data=finviz_data, 
+        )
+
+        return finviz_calendar
+    
     def update_local_earnings_calendar():
         pass 
 
@@ -248,12 +262,12 @@ class CalendarLoader:
     def __init__(self, data=None, path=None):
         self.data = self._load_raw_data(data)
 
-    def get_pre_earnings(self, days=5):
+    def get_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
         """Returns the upcoming earnings release"""
         return self.data[(self.data[DAYS_TO_EARNINGS_KEY] >= 0)
                & (self.data[DAYS_TO_EARNINGS_KEY] <= days)]
     
-    def get_post_earnings(self, days=5):
+    def get_post_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
         return self.data[(self.data[DAYS_TO_EARNINGS_KEY] < 0) & 
                          (self.data[DAYS_TO_EARNINGS_KEY] >= -days)]
 
@@ -273,7 +287,7 @@ class CalendarLoader:
         "returns a Series"
         return self.data[self.data[TICKER_KEY] == ticker][TICKER_KEY]
     
-    def store_pre_earnings(self, days=5, path='upcoming.csv', keep='first'):
+    def store_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS, path='upcoming.csv', keep='first'):
         """
         Use keep=last to preserve the data that is more recent
         this will store a new item until days left is equal to 0. Which means
@@ -285,13 +299,16 @@ class CalendarLoader:
             raise Exception('Nothing to update on old pre-earnings')
         return self._store(pre_earnings, old_data, path, keep)
 
-    def store_post_earnings(self, days=5, path='reported.csv', keep='first'):
+    def store_post_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS, path='reported.csv', keep='first'):
         old_data = pd.read_csv(path, index_col=0)
         post_earnings = self.get_post_earnings(days)
         return self._store(post_earnings, old_data, path, keep)
     
     def _store(self, new_data, old_data, path,  keep):
 
+        if new_data.empty:
+            print("new data is empty nothing to concat")
+            return
         merged_data = pd.concat([old_data, new_data], join='outer')
         merged_data.index = pd.to_datetime(merged_data.index)
         if len(merged_data.columns) != len(old_data.columns):
@@ -322,28 +339,35 @@ class CalendarLoader:
         data[DAYS_TO_EARNINGS_KEY] = data[EARNINGS_DATE_KEY].apply(MasterEarningsCalendar._compute_days_left)
         return data
 
-    def update_pre_earnings(self, days=5):
+    def update_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
         self.store_pre_earnings(days=days, path=config.PRE_EARNINGS_KEEP_LAST_NAME, keep='last')
         self.store_pre_earnings(days=days, path=config.PRE_EARNINGS_KEEP_FIRST_NAME, keep='first')
 
-    def update_post_earnings(self, days=5):
+    def update_post_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
         self.store_post_earnings(days=days, path=config.POST_EARNINGS_KEEP_FIRST_NAME, keep='first')
 
     @classmethod
     def load_stored_pre_earnings(cls):
-        first = pd.read_csv(config.PRE_EARNINGS_KEEP_LAST_NAME)
-        first = cls._update_days_left(first)
-        first = first.set_index([EARNINGS_DATE_KEY])
-        first = first.sort_values(DAYS_TO_EARNINGS_KEY)
-        first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
 
-        last = pd.read_csv(config.PRE_EARNINGS_KEEP_FIRST_NAME)
-        last = cls._update_days_left(last)
-        last = last.set_index([EARNINGS_DATE_KEY])
-        last = last.sort_values(DAYS_TO_EARNINGS_KEY)
-        first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
+        #  Load a table where the initial pre earning value is preserved
+        #  tipically 5 days before the earnings report date
+        keep_first = pd.read_csv(config.PRE_EARNINGS_KEEP_FIRST_NAME)
+        keep_first = cls._update_days_left(keep_first)
+        keep_first = keep_first.set_index([EARNINGS_DATE_KEY])
+        keep_first = keep_first.sort_values(DAYS_TO_EARNINGS_KEY)
+        keep_first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
 
-        return cls(first), cls(last)
+        #  BETA FEATURE: Each time we store values we update the pre earnings data on the
+        #  old items until we reach 1. Wich is 24h before the earnings date
+        #  When run this in a consistent basis (stable frequency). It will allows us
+        #  To keep the most recent pre eargning data on the calendar. This is a Beta feature
+        keep_last = pd.read_csv(config.PRE_EARNINGS_KEEP_LAST_NAME)
+        keep_last = cls._update_days_left(keep_last)
+        keep_last = keep_last.set_index([EARNINGS_DATE_KEY])
+        keep_last = keep_last.sort_values(DAYS_TO_EARNINGS_KEY)
+        keep_last.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
+
+        return keep_first, keep_last
 
     @classmethod
     def load_stored_post_earnings(cls):
