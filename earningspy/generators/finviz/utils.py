@@ -197,11 +197,14 @@ def process_money_columns(df):
 
 def _process_52_high(value):
 
-    high_low = value.split(' - ')
-    if high_low[1] == '-':
-        return float(0.0)
-    elif high_low[1] != '-':
-        return float(high_low[1])
+    if isinstance(value, float):
+        return value
+    elif isinstance(value, str):
+        high_low = value.split(' - ')
+        if high_low[1] == '-':
+            return float(0.0)
+        elif high_low[1] != '-':
+            return float(high_low[1])
     return np.nan
 
 def _process_52_low(value):

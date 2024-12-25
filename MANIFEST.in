@@ -1,1 +1,2 @@
 include earningspy/local_data/from-Feb2023EarningsCalendar.csv
+include earningspy/generators/finviz/filters.json
