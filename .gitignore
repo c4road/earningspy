@@ -1,3 +1,6 @@
+notebooks/
+old_local_data/
+NOTES-AWS.md
 earningsspy.code-workspace
 finviz/filters.json
 BACKLOG.md 

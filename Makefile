@@ -68,6 +68,15 @@ aws-login:  ## enable pip to use codeartifact repo, no need to fetch token first
 aws-upload:  ## upload wheel to codeartifact repo
 	twine upload --repository codeartifact --verbose dist/$(WHEEL)
 
+aws-delete-package:
+	aws codeartifact delete-package-versions \
+		--domain earningspy \
+		--domain-owner 923699018646 \
+		--repository EarningSpy \
+		--format pypi \
+		--package earningspy \
+		--versions $(VERSION)
+
 aws-open-console:  ## open AWS console as project user (not root)
 	open https://923699018646.signin.aws.amazon.com/console
 

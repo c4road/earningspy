@@ -12,10 +12,8 @@ from earningspy.generators.finviz.utils import (
 from earningspy.generators.finviz.constants import (
     CUSTOM_TABLE_ALL_FIELDS,
 )
-import importlib.resources as pkg_resources
-from dateutil.relativedelta import relativedelta
+from earningspy.generators.alphavantage.calendar import EarningsCalendar
 from earningspy.earnings_calendar.constants import (
-    LOCAL_EARNINGS_CALENDAR_FOLDER,
     TRACKED_INDUSTRIES,
     EARNINGS_DATE_KEY,
     TICKER_KEY,
@@ -27,97 +25,15 @@ from earningspy.config import Config
 
 config = Config()
 
-class MasterEarningsCalendar:
-
-    @classmethod
-    def get_whole_earnings_calendar(cls, 
-                                    csv=False, 
-                                    horizon='12month'):
-        """
-        doc: https://www.alphavantage.co/documentation/#earnings-calendar
-        This functions makes a csv requests and transform the csv into a dataframe.
-        to produce csv output mark csv as True 
-        horizons = default 3months, choices=6month,12month
-
-        """
-        api_key = config.ALPHA_VANTAGE_API_KEY
-        if not api_key:
-            raise Exception('Unable to find ALPHAVANTAGE_API_KEY')
-        URL = 'https://www.alphavantage.co/query?function=EARNINGS_CALENDAR&apikey={}'.format(
-            api_key) 
-        if csv:
-            data = cls._get_local_historic_earnings_calendar()
-            data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
-            data[DAYS_TO_EARNINGS_KEY] = data[EARNINGS_DATE_KEY].apply(cls._compute_days_left)
-            data = data.set_index(EARNINGS_DATE_KEY, drop=True)
-            return data
-
-        else:
-            if horizon:
-                URL += '&horizon={}'.format(horizon)
-            data = pd.read_csv(URL)
-            data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
-            data[DAYS_TO_EARNINGS_KEY] = data[EARNINGS_DATE_KEY].apply(
-                cls._compute_days_left)
-            data = data.set_index(EARNINGS_DATE_KEY, drop=True)
-
-        return data.sort_index()
-
-    @classmethod
-    def update_local_earnings_calendar(cls, local_name='from-Feb2023EarningsCalendar.csv'):
-
-        earnings_calendar_folder = LOCAL_EARNINGS_CALENDAR_FOLDER
-        local = cls.get_whole_earnings_calendar(csv=True)
-        web = cls.get_whole_earnings_calendar(csv=False)
-
-        # Find the last date on the dataframe and add grab information
-        # on the request from it 
-        next_day = local.index[-1] + relativedelta(days=1)
-        new = []
-        for i in range(5):
-            if not len(new):
-                print(
-                    f'Unable to find new data on {str(next_day)}, trying with the next day')
-                next_day = next_day + relativedelta(days=1)
-                new = web.loc[str(next_day):]
-            else:
-                break
-
-        merged = pd.concat([local, new])
-        print(local.info())
-        print(merged.info())
-        merged.to_csv(f'{earnings_calendar_folder}/{local_name}')
-        print('File updated successfully')
-
-        return merged
-
-    @classmethod
-    def _compute_days_left(cls, earnings_date):
-
-        today = datetime.today()
-        diff = earnings_date - today
-        return int(diff.days)
-
-    @classmethod
-    def _get_local_historic_earnings_calendar(cls):
-        """
-        Loads a CSV file from the package and returns a DataFrame.
-
-        :param file_name: Name of the CSV file (e.g., 'config.csv').
-        :return: Pandas DataFrame with the contents of the CSV.
-        """
-        file_name = config.LOCAL_HISTORIC_EARNINGS_CALENDAR
-        with pkg_resources.open_text('earningspy.local_data', file_name) as csv_file:
-            return pd.read_csv(csv_file)
 
 class EarningSpy:
 
     @classmethod
     def filters(cls, *args, **kwargs):
         return get_filters(*args, **kwargs)
-    
+
     @classmethod
-    def get_calendar(cls, sector=None, industry=None, index=None, scope=(-90, 90), prefer_local=True):
+    def get_calendar(cls, sector=None, industry=None, index=None, scope=(-90, 90)):
         """
         :param bool prefer_local: Will make a API call to alpha vantage instead of using local file
                                   this means you wont get the old post earning ones
@@ -128,8 +44,7 @@ class EarningSpy:
                                      index=index)
 
         earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
-                                                         scope=scope, 
-                                                         prefer_local=prefer_local)
+                                                         scope=scope)
         finviz_calendar = cls.merge_finviz_and_earnings_calendar(
                 earnings_calendar=earnings_calendar, 
                 finviz_data=finviz_data)
@@ -211,14 +126,13 @@ class EarningSpy:
     @classmethod
     def get_earning_calendar_for(cls, 
                                  symbols,
-                                 scope=(-90, 90),
-                                 prefer_local=True):
+                                 scope=(-90, 90)):
         """
         :symbols list of symbols 
         :scope 
 
         """
-        data = MasterEarningsCalendar.get_whole_earnings_calendar(csv=prefer_local)
+        data = EarningsCalendar.get_or_create_earnings_calendar(update=True)
         results = data[data['symbol'].isin(symbols)]
         if not scope:
             return results.sort_index()
@@ -230,7 +144,7 @@ class EarningSpy:
         return results.sort_index()
     
     @classmethod
-    def get_micro_small_medium_caps(cls, cap='micro', scope=(-15, 5), prefer_local=False):
+    def get_micro_small_medium_caps(cls, cap='micro', scope=(-15, 5)):
 
         if cap not in ['micro', 'small', 'medium', 'all']:
             raise Exception("Invalid scope valid scopes ['micro', 'small', 'medium', 'all']")
@@ -243,8 +157,7 @@ class EarningSpy:
 
         finviz_data = factory[cap](order='marketcap')
         calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
-                                                scope=scope, 
-                                                prefer_local=prefer_local)
+                                                scope=scope)
 
         finviz_calendar = cls.merge_finviz_and_earnings_calendar(
             earnings_calendar=calendar, 
@@ -252,9 +165,7 @@ class EarningSpy:
         )
 
         return finviz_calendar
-    
-    def update_local_earnings_calendar():
-        pass 
+
 
 
 class CalendarLoader:
@@ -336,42 +247,29 @@ class CalendarLoader:
     def _update_days_left(data):
         data = data.reset_index(drop=True)
         data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
-        data[DAYS_TO_EARNINGS_KEY] = data[EARNINGS_DATE_KEY].apply(MasterEarningsCalendar._compute_days_left)
+        data[DAYS_TO_EARNINGS_KEY] = data[EARNINGS_DATE_KEY].apply(EarningsCalendar._compute_days_left)
         return data
 
     def update_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
-        self.store_pre_earnings(days=days, path=config.PRE_EARNINGS_KEEP_LAST_NAME, keep='last')
-        self.store_pre_earnings(days=days, path=config.PRE_EARNINGS_KEEP_FIRST_NAME, keep='first')
+        self.store_pre_earnings(days=days, path=config.PRE_EARNINGS_DATA_PATH, keep='first')
 
     def update_post_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
-        self.store_post_earnings(days=days, path=config.POST_EARNINGS_KEEP_FIRST_NAME, keep='first')
+        self.store_post_earnings(days=days, path=config.POST_EARNINGS_DATA_PATH, keep='first')
 
     @classmethod
     def load_stored_pre_earnings(cls):
 
-        #  Load a table where the initial pre earning value is preserved
-        #  tipically 5 days before the earnings report date
-        keep_first = pd.read_csv(config.PRE_EARNINGS_KEEP_FIRST_NAME)
+        keep_first = pd.read_csv(config.PRE_EARNINGS_DATA_PATH)
         keep_first = cls._update_days_left(keep_first)
         keep_first = keep_first.set_index([EARNINGS_DATE_KEY])
         keep_first = keep_first.sort_values(DAYS_TO_EARNINGS_KEY)
         keep_first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
 
-        #  BETA FEATURE: Each time we store values we update the pre earnings data on the
-        #  old items until we reach 1. Wich is 24h before the earnings date
-        #  When run this in a consistent basis (stable frequency). It will allows us
-        #  To keep the most recent pre eargning data on the calendar. This is a Beta feature
-        keep_last = pd.read_csv(config.PRE_EARNINGS_KEEP_LAST_NAME)
-        keep_last = cls._update_days_left(keep_last)
-        keep_last = keep_last.set_index([EARNINGS_DATE_KEY])
-        keep_last = keep_last.sort_values(DAYS_TO_EARNINGS_KEY)
-        keep_last.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
-
-        return keep_first, keep_last
+        return keep_first
 
     @classmethod
     def load_stored_post_earnings(cls):
-        post = pd.read_csv(config.POST_EARNINGS_KEEP_FIRST_NAME)
+        post = pd.read_csv(config.POST_EARNINGS_DATA_PATH)
         post = cls._update_days_left(post)
         post =  post.set_index([EARNINGS_DATE_KEY])
         post.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')

@@ -8,3 +8,4 @@ tqdm~=4.67.1
 urllib3~=2.2.3
 user-agent~=0.1.10
 pandas~=2.2.3
+matplotlib

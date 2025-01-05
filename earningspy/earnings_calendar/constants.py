@@ -1,4 +1,4 @@
-LOCAL_EARNINGS_CALENDAR_FOLDER = 'local_data'
+LOCAL_EARNINGS_CALENDAR_FOLDER = './local_data'
 POST_PROCESSED_COLUMNS = [
     'Ticker',
     'Company',
