@@ -142,7 +142,7 @@ def get_analyst_price_targets_for_export(
     return analyst_price_targets
 
 
-def download_ticker_details(page_content: requests.Response, **kwargs):
+def download_ticker_details(page_content: requests.Response, *args, **kwargs):
     data = {}
     ticker = kwargs["URL"].split("=")[1]
     page_parsed = html.fromstring(page_content.text)
@@ -158,6 +158,6 @@ def download_ticker_details(page_content: requests.Response, **kwargs):
                 data[row[column]] = row[column + 1]
 
     if len(data) == 0:
-        print(f"-> Unable to parse page for ticker: {ticker}")
+        raise Exception(f"Unable to parse page for ticker: {ticker}")
 
     return {ticker: [data, get_analyst_price_targets_for_export(ticker, page_parsed)]}

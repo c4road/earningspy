@@ -9,7 +9,8 @@ from earningspy.generators.finviz.constants import (
     PERCENTAJE_COLUMNS,
     MONEY_COLUMNS,
     NUMERIC_COLUMNS,
-    BOOLEAN_COLUMNS
+    BOOLEAN_COLUMNS,
+    DEFAULT_REQUEST_METHOD
 )
 
 def get_filters(sub_category=None, raw=False):
@@ -24,8 +25,11 @@ def get_filters(sub_category=None, raw=False):
     return filters.get(sub_category)
 
 
-def _get_dataframe(filters, table, order, details):
-    stock_list = Screener(filters=[filters], table=table, order=order)
+def _get_dataframe(filters, table, order, details, request_method=DEFAULT_REQUEST_METHOD):
+    stock_list = Screener(filters=[filters], 
+                          table=table, 
+                          order=order, 
+                          request_method=request_method)
     if details:
         stock_list = stock_list.get_ticker_details()
     data = pd.DataFrame(index=PERFORMANCE_TABLE_ALL_FIELDS)
@@ -38,11 +42,11 @@ def _get_dataframe(filters, table, order, details):
         data = pd.concat([data, ticker_data], axis=1)
     return _process_dataframe(data)
 
-def _get_data_frame_with_custom_fields(filters, order):
+def _get_data_frame_with_custom_fields(filters, order, request_method=DEFAULT_REQUEST_METHOD):
     
     order = f"&o={order}"
     query = f"https://finviz.com/screener.ashx?v=152&f={filters}" + CUSTOM_TABLE_FIELDS_ON_URL + order
-    stock_list = Screener.init_from_url(query)
+    stock_list = Screener.init_from_url(query, request_method=request_method)
     stock_list = stock_list.get_ticker_details()
     data = pd.DataFrame(index=CUSTOM_TABLE_ALL_FIELDS)
     for stock in stock_list:
@@ -57,7 +61,8 @@ def _get_data_frame_with_custom_fields(filters, order):
 def get_dataframe_by_industry(industry=None, 
                               table='Performance', 
                               order='marketcap', 
-                              details=True):
+                              details=False,
+                              request_method=DEFAULT_REQUEST_METHOD):
     if not industry:
         pp(get_filters('Industry'))
         return
@@ -65,34 +70,42 @@ def get_dataframe_by_industry(industry=None,
     if not filters:
         raise Exception("Unable to get Industry: Invalid industry code")
     if table == 'Custom':
-        data = _get_data_frame_with_custom_fields(filters, order=order)
+        data = _get_data_frame_with_custom_fields(filters, 
+                                                  order=order, 
+                                                  request_method=request_method)
     else:
         print("the table is not custom")
-        data = _get_dataframe(filters, table=table, order=order, details=details)
+        data = _get_dataframe(filters, table=table, order=order, details=details, request_method=request_method)
         data.loc['Industry'] = industry
     return data
 
 
-def get_micro_caps_data(order='marketcap'):
+def get_micro_caps_data(order='marketcap', request_method=DEFAULT_REQUEST_METHOD):
 
     micro_caps_filter = 'cap_micro'
-    data = _get_data_frame_with_custom_fields(micro_caps_filter, order=order)
+    data = _get_data_frame_with_custom_fields(micro_caps_filter, 
+                                              order=order, 
+                                              request_method=request_method)
     data.loc['Index'] = 'Micro'
     return data
 
 
-def get_small_caps_data(order='marketcap'):
+def get_small_caps_data(order='marketcap', request_method=DEFAULT_REQUEST_METHOD):
     
     small_caps_filter = 'cap_small'
-    data = _get_data_frame_with_custom_fields(small_caps_filter, order=order)
+    data = _get_data_frame_with_custom_fields(small_caps_filter, 
+                                              order=order, 
+                                              request_method=request_method)
     data.loc['Index'] = 'Small'
     return data
 
 
-def get_medium_caps_data(order='marketcap'):
+def get_medium_caps_data(order='marketcap', request_method=DEFAULT_REQUEST_METHOD):
 
     medium_caps_filter = 'cap_mid'
-    data = _get_data_frame_with_custom_fields(medium_caps_filter, order=order)
+    data = _get_data_frame_with_custom_fields(medium_caps_filter, 
+                                              order=order, 
+                                              request_method=request_method)
     data.loc['Index'] = 'Medium'
     return data
 
@@ -100,7 +113,8 @@ def get_medium_caps_data(order='marketcap'):
 def get_dataframe_by_index(index=None, 
                            table='Performance', 
                            order='marketcap', 
-                           details=True):
+                           details=False,
+                           request_method=DEFAULT_REQUEST_METHOD):
     if not index:
         pp(get_filters('Index'))
         return
@@ -108,16 +122,24 @@ def get_dataframe_by_index(index=None,
     if not filters:
         raise Exception("Unable to get Index: Invalid index code")
     if table == 'Custom':
-        data = _get_data_frame_with_custom_fields(filters, order=order)
+        data = _get_data_frame_with_custom_fields(filters, 
+                                                  order=order, 
+                                                  request_method=request_method)
     else:
-        data = _get_dataframe(filters, table=table, order=order, details=details)
+        data = _get_dataframe(filters, 
+                              table=table, 
+                              order=order, 
+                              details=details, 
+                              request_method=request_method)
+
         data.loc['Index'] = index
     return data
 
 def get_dataframe_by_sector(sector=None, 
                             table='Performance', 
                             order='marketcap', 
-                            details=True):
+                            details=True,
+                            request_method=DEFAULT_REQUEST_METHOD):
     if not sector:
         pp(get_filters('Sector'))
         return
@@ -125,7 +147,9 @@ def get_dataframe_by_sector(sector=None,
     if not filters:
         raise Exception("Unable to get sector: Invalid sector code")
     if table == 'Custom':
-        data = _get_data_frame_with_custom_fields(filters, order=order)
+        data = _get_data_frame_with_custom_fields(filters, 
+                                                  order=order, 
+                                                  request_method=request_method)
     else:
         data = _get_dataframe(filters, table=table, order=order, details=details)
         data.loc['Sector'] = sector
@@ -229,7 +253,7 @@ def process_52_high_low(data, drop=False):
     data.loc[high_col_name] = data.loc[col_name].apply(_process_52_high)
     if drop:
         data.drop(col_name, inplace=True)
-        
+
     return data
 
 

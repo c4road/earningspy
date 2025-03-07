@@ -19,8 +19,10 @@ from earningspy.earnings_calendar.constants import (
     TICKER_KEY,
     DEFAULT_DATE_FORMAT,
     DAYS_TO_EARNINGS_KEY,
-    DEFAULT_DAYS_PRE_EARNINGS
+    DEFAULT_DAYS_PRE_EARNINGS,
+    DEFAULT_DAYS_POST_EARNINGS,
 )
+from earningspy.generators.finviz.constants import DEFAULT_REQUEST_METHOD
 from earningspy.config import Config
 
 config = Config()
@@ -33,7 +35,12 @@ class EarningSpy:
         return get_filters(*args, **kwargs)
 
     @classmethod
-    def get_calendar(cls, sector=None, industry=None, index=None, scope=(-90, 90)):
+    def get_calendar(cls, 
+                     sector=None, 
+                     industry=None, 
+                     index=None, 
+                     scope=(-90, 90), 
+                     request_method=DEFAULT_REQUEST_METHOD):
         """
         :param bool prefer_local: Will make a API call to alpha vantage instead of using local file
                                   this means you wont get the old post earning ones
@@ -41,7 +48,8 @@ class EarningSpy:
         
         finviz_data = cls.get_finviz(sector=sector, 
                                      industry=industry, 
-                                     index=index)
+                                     index=index,
+                                     request_method=request_method)
 
         earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
                                                          scope=scope)
@@ -49,7 +57,7 @@ class EarningSpy:
                 earnings_calendar=earnings_calendar, 
                 finviz_data=finviz_data)
  
-        return finviz_calendar
+        return CalendarLoader(data=finviz_calendar)
 
 
     @classmethod
@@ -58,23 +66,27 @@ class EarningSpy:
                    industry=None,
                    index=None,
                    table='Custom', 
-                   details=True):
+                   details=False,
+                   request_method=DEFAULT_REQUEST_METHOD):
         
         if industry and not index and not sector:
             finviz_data = get_dataframe_by_industry(
                 industry, 
                 details=details, 
-                table=table)
+                table=table,
+                request_method=request_method)
         elif sector and not index and not industry:
             finviz_data = get_dataframe_by_sector(
                 sector, 
                 details=details, 
-                table=table)
+                table=table,
+                request_method=request_method)
         elif index and not sector and not industry:
             finviz_data = get_dataframe_by_index(
                 index, 
                 details=details, 
-                table=table)
+                table=table,
+                request_method=request_method)
         else:
             raise Exception('You can only pass sector, industry, or index not several of them')
 
@@ -144,7 +156,10 @@ class EarningSpy:
         return results.sort_index()
     
     @classmethod
-    def get_micro_small_medium_caps(cls, cap='micro', scope=(-15, 5)):
+    def get_calendar_by_cap(cls, 
+                            cap='micro', 
+                            scope=(-15, 5), 
+                            request_method=DEFAULT_REQUEST_METHOD):
 
         if cap not in ['micro', 'small', 'medium', 'all']:
             raise Exception("Invalid scope valid scopes ['micro', 'small', 'medium', 'all']")
@@ -155,7 +170,7 @@ class EarningSpy:
             'medium': get_medium_caps_data, 
         }
 
-        finviz_data = factory[cap](order='marketcap')
+        finviz_data = factory[cap](order='marketcap', request_method=request_method)
         calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
                                                 scope=scope)
 
@@ -164,8 +179,7 @@ class EarningSpy:
             finviz_data=finviz_data, 
         )
 
-        return finviz_calendar
-
+        return CalendarLoader(data=finviz_calendar)
 
 
 class CalendarLoader:
@@ -185,20 +199,48 @@ class CalendarLoader:
     def get_pre_earnings_from_this_month(self):
         return self.data[(self.data[DAYS_TO_EARNINGS_KEY] > -30) & 
                          (self.data[DAYS_TO_EARNINGS_KEY] < 0)]
-
-    def get_pre_earnings_from_one_month(self, days=30):
-        return self.data[(self.data[DAYS_TO_EARNINGS_KEY] > -60) & 
-                         (self.data[DAYS_TO_EARNINGS_KEY] < -days)]
     
-    def get_pre_earnings_from_two_months(self, days=30):
-        return self.data[(self.data[DAYS_TO_EARNINGS_KEY] > -90) & 
-                         (self.data[DAYS_TO_EARNINGS_KEY] < -days)]
+    def get_24h_earnings(self):
+        return self.data[self.data[DAYS_TO_EARNINGS_KEY] == 0]
+    
+    def get_72h_earnings(self):
+        return self.data[(self.data[DAYS_TO_EARNINGS_KEY] >= 0) & 
+                         (self.data[DAYS_TO_EARNINGS_KEY] < 2)]
+    
+    def get_1w_earnings(self):
+        return self.data[(self.data[DAYS_TO_EARNINGS_KEY] >= 0) & 
+                         (self.data[DAYS_TO_EARNINGS_KEY] < 6)]
+
+    def get_last_week_earnings(self):
+        pass
+
+    def get_earnings_week_predictions(self):
+        pass
+
+    def get_bull_predictions(self):
+        pass
+
+    def get_bear_predictions(self):
+        pass
+
+    def get_earnings_pct_change(self):
+        pass
 
     def get_report_dates_by_ticker(self, ticker):
         "returns a Series"
         return self.data[self.data[TICKER_KEY] == ticker][TICKER_KEY]
     
-    def store_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS, path='upcoming.csv', keep='first'):
+    def store_today_earnings(self, 
+                             days=DEFAULT_DAYS_PRE_EARNINGS, 
+                             path='upcoming.csv', 
+                             keep='first'):
+        earnings = self.get_24h_earnings()
+        earnings.to_csv("todays_earnings.csv")
+
+    def store_pre_earnings(self, 
+                           days=DEFAULT_DAYS_PRE_EARNINGS, 
+                           path='upcoming.csv', 
+                           keep='first'):
         """
         Use keep=last to preserve the data that is more recent
         this will store a new item until days left is equal to 0. Which means
@@ -214,7 +256,7 @@ class CalendarLoader:
         old_data = pd.read_csv(path, index_col=0)
         post_earnings = self.get_post_earnings(days)
         return self._store(post_earnings, old_data, path, keep)
-    
+
     def _store(self, new_data, old_data, path,  keep):
 
         if new_data.empty:
@@ -242,6 +284,9 @@ class CalendarLoader:
         data = self._update_days_left(data)
         data = data.set_index([EARNINGS_DATE_KEY])
         return data
+    
+    def _load_training_data(self):
+        pass
 
     @staticmethod
     def _update_days_left(data):
@@ -252,9 +297,11 @@ class CalendarLoader:
 
     def update_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
         self.store_pre_earnings(days=days, path=config.PRE_EARNINGS_DATA_PATH, keep='first')
+        return self
 
-    def update_post_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
+    def update_post_earnings(self, days=DEFAULT_DAYS_POST_EARNINGS):
         self.store_post_earnings(days=days, path=config.POST_EARNINGS_DATA_PATH, keep='first')
+        return self
 
     @classmethod
     def load_stored_pre_earnings(cls):
@@ -265,7 +312,7 @@ class CalendarLoader:
         keep_first = keep_first.sort_values(DAYS_TO_EARNINGS_KEY)
         keep_first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
 
-        return keep_first
+        return cls(data=keep_first)
 
     @classmethod
     def load_stored_post_earnings(cls):
@@ -274,4 +321,7 @@ class CalendarLoader:
         post =  post.set_index([EARNINGS_DATE_KEY])
         post.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
         post = post.sort_values(DAYS_TO_EARNINGS_KEY)
-        return cls(post)
+        return cls(data=post)
+
+    def load_current_week_earnings(self):
+        pass

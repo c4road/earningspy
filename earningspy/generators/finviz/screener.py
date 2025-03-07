@@ -30,7 +30,7 @@ class Screener(object):
     """ Used to download data from https://www.finviz.com/screener.ashx. """
 
     @classmethod
-    def init_from_url(cls, url, rows=None):
+    def init_from_url(cls, url, rows=None, request_method="sequential"):
         """
         Initializes from url
 
@@ -57,7 +57,7 @@ class Screener(object):
             except KeyError:
                 raise InvalidTableType(split_query["v"][0])
 
-        return cls(tickers, filters, rows, order, signal, table, custom)
+        return cls(tickers, filters, rows, order, signal, table, custom, request_method=request_method)
 
     def __init__(
         self,
@@ -373,7 +373,17 @@ class Screener(object):
         """
         Downloads the details of all tickers shown by the table.
         """
-
+        # if self._request_method == "async":
+        #     async_connector = Connector(
+        #         scrape.download_ticker_details,
+        #         [
+        #             f"https://finviz.com/quote.ashx?&t={row.get('Ticker')}"
+        #             for row in self.data
+        #         ],
+        #         self._user_agent,
+        #     )
+        #     ticker_data = async_connector.run_connector()
+        # else:
         ticker_data = sequential_data_scrape(
             scrape.download_ticker_details,
             [
@@ -451,7 +461,7 @@ class Screener(object):
                 self._user_agent,
                 self.headers,
                 self._rows,
-                css_select=True,
+                css_select=False,
             )
             pages_data = async_connector.run_connector()
         else:

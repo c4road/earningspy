@@ -139,6 +139,9 @@ class AnomalyInspector:
         
         return self.new_training_data
     
+    def get_compounded_abnormal_return(self):
+        return
+
     def save(
         self, 
         pre_earning_data_path, 

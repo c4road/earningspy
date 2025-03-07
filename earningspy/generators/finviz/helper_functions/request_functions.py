@@ -1,6 +1,7 @@
 import asyncio
 import os
 from typing import Callable, Dict, List
+import random
 
 import aiohttp
 import requests
@@ -96,27 +97,42 @@ class Connector:
         self,
         url: str,
         session: aiohttp.ClientSession,
+        *args,
+        **kwargs
     ):
         """ Sends asynchronous http request to URL address and scrapes the webpage. """
+        semaphore = asyncio.Semaphore(3)
+        USER_AGENTS = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:90.0) Gecko/20100101 Firefox/90.0",
+        ]
 
         try:
-            async with session.get(
-                url, headers={"User-Agent": self.user_agent}
-            ) as response:
-                page_html = await response.read()
+            async with semaphore:
+                asyncio.sleep(random.uniform(1, 3)) 
+                async with session.get(
+                    url, headers={"User-Agent": random.choice(USER_AGENTS)}
+                ) as response:
+                    page_html = await response.read()
 
-                if page_html.decode("utf-8") == "Too many requests.":
-                    raise Exception("Too many requests.")
-
-                if self.css_select:
-                    return self.scrape_function(
-                        html.fromstring(page_html), *self.arguments
-                    )
-                return self.scrape_function(page_html, *self.arguments)
+                    if page_html.decode("utf-8") == "Too many requests.":
+                        raise Exception("Too many requests.")
+                    
+                    if (page_html.decode("utf-8") == "This IP address has performed an unusual high number of " 
+                                                     "requests and has been temporarily rate limited. If you " 
+                                                     "believe this to be in error, please contact us."):
+                        raise Exception("Unusual high number of requests")
+    
+                    if self.css_select:
+                        return self.scrape_function(
+                            html.fromstring(page_html), *self.arguments, **kwargs
+                        )
+                    return self.scrape_function(page_html.decode("utf-8"), *self.arguments, **kwargs)
         except (asyncio.TimeoutError, requests.exceptions.Timeout):
             raise ConnectionTimeout(url)
 
-    async def __async_scraper(self):
+    async def __async_scraper(self, *args, **kwargs):
         """ Adds a URL's into a list of tasks and requests their response asynchronously. """
 
         async_tasks = []
@@ -129,15 +145,14 @@ class Connector:
             connector=conn, timeout=timeout, headers={"User-Agent": self.user_agent}
         ) as session:
             for url in self.urls:
-                async_tasks.append(self.__http_request__async(url, session))
+                kwargs['URL'] = url
+                async_tasks.append(self.__http_request__async(url, session, *args, **kwargs))
 
             self.data = await asyncio.gather(*async_tasks)
 
     def run_connector(self):
         """ Starts the asynchronous loop and returns the scraped data. """
-
         asyncio.set_event_loop(asyncio.SelectorEventLoop())
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.__async_scraper())
-
         return self.data
