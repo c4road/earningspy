@@ -1,9 +1,7 @@
-EarnignsSpy - WIP 
+EarnignsSpy
 
+A set of tools to trade earnings anomaly called PEAD using NYSE data.
 
-Set environment variables in google colab. 
-https://stackoverflow.com/questions/53306150/setting-environment-variables-in-google-colab
-
+```
 pip install earningspy 
-
-eeeeeeeeeee
+```
