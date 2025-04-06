@@ -13,7 +13,7 @@ def get_range(range_from, end_date):
     accepted_values = ['3m', '9m', '1y', '5y', '10y']
     if range_from not in accepted_values:
         raise Exception('Invalid from value')
-    
+
     if range_from == '3m':
         start_date = end_date - relativedelta(months=3)
     if range_from == '9m':

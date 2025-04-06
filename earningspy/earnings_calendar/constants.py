@@ -135,7 +135,7 @@ FINVIZ_RAW_DATA_FOLDER = '/FinvizRawData'
 DEFAULT_BEFORE_EARNINGS_DATE_DAYS=1
 DEFAULT_AFTER_EARNINGS_DATE_DAYS=5
 # Default ranges to calculate pct and diff (days_before, days_after)
-RANGES = [(1, 3), (1, 15), (1, 30)]
+RANGES = [(1, 3), (1, 30), (1, 60)]
 DEFAULT_IF_ALPHA_WINDOW = 31
 
 
@@ -351,6 +351,7 @@ TRACKED_TECH = [
 DEFAULT_TABLE = 'Custom'
 EARNINGS_DATE_KEY = 'reportDate'
 TICKER_KEY = 'Ticker'
+COMPANY_KEY = 'Company'
 DEFAULT_DATE_FORMAT="%Y-%m-%d"
 DAYS_TO_EARNINGS_KEY='days_left'
 IS_ANOMALY_KEY = f"{RANGES[0][0]}-{RANGES[0][1]} pct"
