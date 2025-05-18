@@ -1,3 +1,4 @@
+import datetime
 from earningspy.generators.finviz.screener import Screener
 import pandas as pd
 from pprint import pprint as pp
@@ -9,7 +10,6 @@ from earningspy.generators.finviz.constants import (
     PERCENTAJE_COLUMNS,
     MONEY_COLUMNS,
     NUMERIC_COLUMNS,
-    BOOLEAN_COLUMNS
 )
 
 def get_filters(sub_category=None, raw=False):
@@ -53,6 +53,24 @@ def _get_data_frame_with_custom_fields(filters, order):
                 ticker_data.loc[key, ticker] = value
         data = pd.concat([data, ticker_data], axis=1)
     return _process_dataframe(data)
+
+
+def get_dataframe_by_tickers(tickers, order='marketcap'):
+    tickers = ','.join(tickers)
+    order = f"&o={order}"
+    query = f'https://finviz.com/screener.ashx?t={tickers}' + CUSTOM_TABLE_FIELDS_ON_URL
+    stock_list = Screener.init_from_url(query)
+    stock_list = stock_list.get_ticker_details()
+    data = pd.DataFrame(index=CUSTOM_TABLE_ALL_FIELDS)
+    for stock in stock_list:
+        ticker = stock.get('Ticker')
+        ticker_data = pd.DataFrame(index=CUSTOM_TABLE_ALL_FIELDS)
+        for key, value in stock.items():
+            if key in CUSTOM_TABLE_ALL_FIELDS:
+                ticker_data.loc[key, ticker] = value
+        data = pd.concat([data, ticker_data], axis=1)
+    return _process_dataframe(data)
+
 
 def get_dataframe_by_industry(industry=None, 
                               table='Performance', 
@@ -208,6 +226,8 @@ def _process_52_high(value):
     return np.nan
 
 def _process_52_low(value):
+    if isinstance(value, float):
+        return value
     high_low = value.split(' - ')
     if high_low[0] == '-':
         return float(0.0)
@@ -232,6 +252,167 @@ def process_52_high_low(data, drop=False):
         
     return data
 
+def calculate_normalized_52w(row):
+    """Calculates the normalized indicator for price within a 52-week range."""
+
+    if isinstance(row['52W Range'], float):
+        return row['52W Range']
+
+    range52 = row['52W Range'].split('-')
+    if not len(range52):
+        return np.nan
+    try:
+        low_52w, high_52w = range52
+        low_52w, high_52w = float(low_52w.strip()), float(high_52w.strip())
+
+        midpoint = (high_52w + low_52w) / 2
+        range_width = high_52w - low_52w
+        normalized_indicator = (row['Price'] - midpoint) / (range_width / 2)
+    except Exception as e:
+        print(f"Error processing 52W Range {row['52W Range']}: {e}")
+        return np.nan
+    else:
+        return np.round(normalized_indicator, 4)
+
+def process_ltdebt_eq(row):
+
+    if isinstance(row['LTDebt/Eq'], float):
+        return row['LTDebt/Eq']
+    
+    if isinstance(row['LTDebt/Eq'], str):
+        if row['LTDebt/Eq'].strip() == '-':
+            return np.nan
+        try:
+            value = float(row['LTDebt/Eq'])
+        except:
+            value = np.nan
+    else:
+        value = np.nan
+    
+    return value
+
+def process_dividend(row, row_name):
+    
+    if isinstance(row[row_name], float):
+        return row[row_name]
+    dividend_yield = np.nan
+    value = row[row_name].strip()
+    if value == '-':
+        return dividend_yield
+    else:
+        value = value.split(' ')
+        if len(value[1]) > 1:
+            dividend_yield = np.round(float(value[1].strip('(').strip(')').replace('%', '')) / 100, 4)
+
+    return dividend_yield
+
+def process_index(row, index): 
+
+    if isinstance(row['Index'], int):
+        return row['Index']
+    indexes = row['Index'].replace(' ', '').split(',')
+    if index in indexes:
+        return 1
+
+    return 0
+
+def process_earnings_time(row, time):
+
+    if isinstance(row['Earnings'], int):
+        return row['Earnings']
+    earnings_time = row['Earnings'].split(' ')
+    if earnings_time == ['-']:
+        return np.nan
+    try:
+        earnings_time = earnings_time[2]
+    except IndexError:
+        return np.nan
+    else:
+        if earnings_time == time:
+            return 1
+    return 0
+
+def process_ex_dividend(row):
+
+    value = row['Dividend Ex-Date']
+    if isinstance(value, datetime.date):
+        return value
+    if pd.isna(value):
+        return np.nan
+    if value.strip() == '-':
+        return np.nan
+    try:
+        date = pd.to_datetime(value, format='%b %d, %Y').date()
+    except:
+        return np.nan
+    else:
+        return date
+
+def process_optionable_shortable(row, type_='option'): 
+    value = row['Option/Short']
+    if isinstance(value, int):
+        return value
+    if value.strip() == '-':
+        return np.nan
+    value = value.split(" / ")
+    if len(value) <= 1:
+        return np.nan
+    if value[0] == "Yes" and type_ == 'option':
+        return 1
+    elif value[1] == "Yes" and type_ == 'short':
+        return 1
+    return 0
+
+
+def process_volatility_range(row):
+    value = row['Volatility']
+    if value == '-':
+        return np.nan
+    if isinstance(value, float):
+        return value
+    if isinstance(value, int):
+        return float(value)
+    value = value.split(' ')
+    if len(value) != 2:
+        return np.nan
+    try:
+        range_ = [float(v.replace('%', '')) / 100 for v in value]
+    except ValueError as e:
+        # print(f"Error processing Volatility Range {value}: {e}")
+        return np.nan
+    return range_[0] - range_[1]
+
+
+def process_country(row):
+    value = row['Country']
+    try:
+        if value.strip().lower() == 'usa':
+            return 1
+    except Exception:
+        return np.nan
+        
+    return 0
+
+def process_remaning_columns(data):
+
+    data = data.T
+    data.loc[:,'52W_NORM'] = data.apply(lambda row: calculate_normalized_52w(row), axis=1)
+    data.loc[:,'LTDEBT/EQ'] = data.apply(lambda row: process_ltdebt_eq(row), axis=1)
+    data.loc[:,'DIVIDEND_YIELD_EST'] = data.apply(lambda row: process_dividend(row, row_name='Dividend Est.'), axis=1)
+    data.loc[:,'DIVIDEND_YIELD_TTM'] = data.apply(lambda row: process_dividend(row, row_name='Dividend TTM'), axis=1)
+    data.loc[:,'IS_S&P500'] = data.apply(lambda row: process_index(row, index='S&P500'), axis=1)
+    data.loc[:,'IS_RUSSELL'] = data.apply(lambda row: process_index(row, index='RUT'), axis=1)
+    data.loc[:,'IS_NASDAQ'] = data.apply(lambda row: process_index(row, index='NDX'), axis=1)
+    data.loc[:,'IS_AMC'] = data.apply(lambda row: process_earnings_time(row, time='AMC'), axis=1)
+    data.loc[:,'IS_BMO'] = data.apply(lambda row: process_earnings_time(row, time='BMO'), axis=1)
+    data.loc[:,'DIVIDEND_EX-DATE'] = data.apply(lambda row: process_ex_dividend(row), axis=1)
+    data.loc[:,'IS_OPTIONABLE'] = data.apply(lambda row: process_optionable_shortable(row, type_='option'), axis=1)
+    data.loc[:,'IS_SHORTABLE'] = data.apply(lambda row: process_optionable_shortable(row, type_='short'), axis=1)
+    data.loc[:,'VOLATILITY_RANGE'] = data.apply(lambda row: process_volatility_range(row), axis=1)
+    data.loc[:,'IS_USA'] = data.apply(lambda row: process_country(row), axis=1)
+
+    return data.T
+
 
 def _process_dataframe(df):
     
@@ -239,8 +420,8 @@ def _process_dataframe(df):
     df = process_money_columns(df)
     df = process_numeric_columns(df)
     df = process_52_high_low(df)
-    # df = process_boolean_columns(df)
     df = process_report_date(df)
+    df = process_remaning_columns(df)
 
     return df
 
@@ -260,27 +441,6 @@ def process_numeric_columns(data):
     for col in NUMERIC_COLUMNS:
         try:
             data.loc[col] = data.loc[col].apply(process_volume)
-        except Exception as e:
-            print('Unable to transform this column: {} - {}'.format(col, e))
-    return data
-
-def transform_booleans(value):
-    
-    if isinstance(value, str):
-        if value == 'Yes':
-            return 1
-        elif value == 'No':
-            return 0
-        else:
-            return np.nan
-    else:
-        return np.nan
-
-def process_boolean_columns(data):
-
-    for col in BOOLEAN_COLUMNS:
-        try:
-            data.loc[col] = data.loc[col].apply(transform_booleans)
         except Exception as e:
             print('Unable to transform this column: {} - {}'.format(col, e))
     return data

@@ -13,7 +13,7 @@ def get_range(range_from, end_date):
     accepted_values = ['3m', '9m', '1y', '5y', '10y']
     if range_from not in accepted_values:
         raise Exception('Invalid from value')
-    
+
     if range_from == '3m':
         start_date = end_date - relativedelta(months=3)
     if range_from == '9m':
@@ -44,10 +44,11 @@ def get_range_timestamps(start_date, end_date):
 def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date()):
 
     portfolio = pd.DataFrame()
-
+    not_found = []
     for i, asset in tqdm(enumerate(assets), total = len(assets)):
         ticker_data = get_one_ticker(asset, from_=from_, start_date=start_date, end_date=end_date)
         if ticker_data is None:
+            not_found.append(asset)
             continue
         close_data = prepare_data(ticker_data, asset).reset_index()
         if i == 0:
@@ -61,13 +62,16 @@ def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date())
     portfolio = portfolio.set_index('Date')
     portfolio.index = pd.to_datetime(portfolio.index)
     portfolio = portfolio.round(3)
+    print(f"Not found assets: {len(set(not_found))}, {set(not_found)}")
     return portfolio
 
 
 def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date()):
     
-    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) \
-           AppleWebKit/537.36 (KHTML, like Gecko) Chrome/77.0.3865.90 Safari/537.36'}
+    headers = {
+        'User-Agent': "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.0.3705;)",
+    }
+
     if start_date:
         end_date = str(end_date)
         start, end = get_range_timestamps(start_date, end_date)

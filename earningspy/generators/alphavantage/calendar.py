@@ -15,7 +15,8 @@ class EarningsCalendar:
     @classmethod
     def get_or_create_earnings_calendar(cls,
                                         horizon='12month',
-                                        update=False):
+                                        update=False,
+                                        web=False):
         """
         doc: https://www.alphavantage.co/documentation/#earnings-calendar
         This functions makes a csv requests and transform the csv into a dataframe.
@@ -23,6 +24,9 @@ class EarningsCalendar:
         horizons = default 3months, choices=6month,12month
 
         """
+        if web:
+            return cls.get_alphavantage_earnings_calendar(horizon=horizon)
+
         not_found = False
         if update:
             cls.update_earnings_calendar()

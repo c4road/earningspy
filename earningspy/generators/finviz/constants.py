@@ -119,7 +119,6 @@ CUSTOM_TABLE_ALL_FIELDS = [
     'Insider Trans',
     'Inst Own',
     'Inst Trans',
-    'Float Short',                      # The number of shares short divided by total amount of shares float, expressed in %.
 
     # Short 
     'Short Ratio',                      # The number of shares held short divided by the stock's average daily trading volume
@@ -136,6 +135,23 @@ CUSTOM_TABLE_ALL_FIELDS = [
     'Option/Short',
 
     'Prev Close',
+]
+
+POST_GENERATED_FIELDS = [
+    '52W_NORM',
+    'LTDEBT/EQ',
+    'DIVIDEND_YIELD_EST',
+    'DIVIDEND_YIELD_TTM',
+    'IS_S&P500',
+    'IS_RUSSELL',
+    'IS_NASDAQ',
+    'IS_AMC',
+    'IS_BMO',
+    'DIVIDEND_EX-DATE',
+    'IS_OPTIONABLE',
+    'IS_SHORTABLE',
+    'VOLATILITY_RANGE',
+    'IS_USA',
 ]
 
 PERFORMANCE_TABLE_ALL_FIELDS = [
@@ -472,14 +488,3 @@ ALLOWED_INDUSTRIES = [
     "Utilities - Renewable",
     "Waste Management"
 ]
-
-def calculate_z_stat(observed_freq, expected_freq, total_count):
-
-    if total_count == 0 or expected_freq == 0:
-        return 0
-
-    standard_error = np.sqrt(expected_freq * (1 - expected_freq) / total_count)
-    if standard_error == 0:
-        return 0
-
-    return (observed_freq - expected_freq) / standard_error
