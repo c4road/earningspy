@@ -36,9 +36,9 @@ def calendar_formatter(data):
     data.columns = data.columns.str.strip()
     data = data.rename(columns={'VOLATILITY_W': 'VOLATILITY_HIGH', 'VOLATILITY_M': 'VOLATILITY_LOW'})
 
-    # data['LTDEBT/EQ'] = pd.to_numeric(data['LTDEBT/EQ'], errors='coerce')
-    # data['IS_AMC'] = data['IS_AMC'].fillna(0).astype('int64')
-    # data['IS_BMO'] = data['IS_BMO'].fillna(0).astype('int64')
+    data['LTDEBT/EQ'] = pd.to_numeric(data['LTDEBT/EQ'], errors='coerce')
+    data['IS_AMC'] = data['IS_AMC'].fillna(0).astype('int64')
+    data['IS_BMO'] = data['IS_BMO'].fillna(0).astype('int64')
 
     # drop columns that are not useful or preprocessed
     data = data.drop([
