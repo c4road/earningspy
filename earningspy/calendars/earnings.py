@@ -5,26 +5,63 @@ from earningspy.generators.finviz.utils import (
     get_dataframe_by_industry,
     get_dataframe_by_sector,
     get_dataframe_by_index,
+    get_dataframe_by_tickers,
     get_micro_caps_data,
     get_small_caps_data,
     get_medium_caps_data,
 )
 from earningspy.generators.finviz.constants import (
     CUSTOM_TABLE_ALL_FIELDS,
+    POST_GENERATED_FIELDS
 )
 from earningspy.generators.alphavantage.calendar import EarningsCalendar
-from earningspy.earnings_calendar.constants import (
+from earningspy.common.constants import (
     TRACKED_INDUSTRIES,
     EARNINGS_DATE_KEY,
     TICKER_KEY,
+    TICKER_KEY_CAPITAL,
     DEFAULT_DATE_FORMAT,
-    DAYS_TO_EARNINGS_KEY,
-    DEFAULT_DAYS_PRE_EARNINGS
+    DAYS_TO_EARNINGS_KEY_CAPITAL,
+    DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT,
+    DEFAULT_DAYS_PRE_EARNINGS,
 )
 from earningspy.config import Config
 
 config = Config()
 
+def calendar_formatter(data):
+    data = data.drop(['LTDebt/Eq', 'Dividend Ex-Date'], axis=1)
+    data.columns = data.columns.str.replace(' ', '_')
+    data.columns = data.columns.str.upper()
+    data.columns = data.columns.str.strip()
+    data = data.rename(columns={'VOLATILITY_W': 'VOLATILITY_HIGH', 'VOLATILITY_M': 'VOLATILITY_LOW'})
+
+    # data['LTDEBT/EQ'] = pd.to_numeric(data['LTDEBT/EQ'], errors='coerce')
+    # data['IS_AMC'] = data['IS_AMC'].fillna(0).astype('int64')
+    # data['IS_BMO'] = data['IS_BMO'].fillna(0).astype('int64')
+
+    # drop columns that are not useful or preprocessed
+    data = data.drop([
+        'FISCALDATEENDING',
+        'COUNTRY',
+        'INDEX', 
+        'ESTIMATE',
+        'EARNINGS', 
+        'CURRENCY', 
+        'RETURN%_1Y', 
+        'DIVIDEND_EST.', 
+        'DIVIDEND_TTM', 
+        'OPTION/SHORT', 
+        'VOLATILITY', 
+        '52W_HIGH', 
+        '52W_LOW', 
+        '52W_RANGE'
+    ], axis=1)
+
+    # round to four decimal places
+    data = data.round(4)
+    return data
+    
 
 class EarningSpy:
 
@@ -34,22 +71,19 @@ class EarningSpy:
 
     @classmethod
     def get_calendar(cls, sector=None, industry=None, index=None, scope=(-90, 90)):
-        """
-        :param bool prefer_local: Will make a API call to alpha vantage instead of using local file
-                                  this means you wont get the old post earning ones
-        """
         
         finviz_data = cls.get_finviz(sector=sector, 
                                      industry=industry, 
                                      index=index)
 
         earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
-                                                         scope=scope)
+                                                         scope=scope,
+                                                         web=True)
         finviz_calendar = cls.merge_finviz_and_earnings_calendar(
                 earnings_calendar=earnings_calendar, 
                 finviz_data=finviz_data)
  
-        return finviz_calendar
+        return calendar_formatter(finviz_calendar)
 
 
     @classmethod
@@ -80,8 +114,35 @@ class EarningSpy:
 
         return finviz_data
     
-    def get_time_series_portfolio(cls, tickers):
+    @classmethod
+    def get_finviz_by_tickers(cls, tickers):
+        """
+        :param tickers: list of tickers
+        :return: DataFrame with the finviz data for the tickers
+        """
+        finviz_data = get_dataframe_by_tickers(tickers)
+        return finviz_data
+    
+    @classmethod
+    def get_custom_calendar(cls, tickers):
+        finviz_data = cls.get_finviz_by_tickers(tickers)
+
+        earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, web=True)
+        finviz_calendar = cls.merge_finviz_and_earnings_calendar(
+                earnings_calendar=earnings_calendar, 
+                finviz_data=finviz_data)
+        
+        return finviz_calendar
+    
+    def get_this_week_earnings():
         pass
+
+    def get_previous_week_earnings():
+        pass
+
+    def next_week_earnings():
+        pass
+
 
     @classmethod
     def gel_all_tracked_industries(cls, 
@@ -108,9 +169,9 @@ class EarningSpy:
     def merge_finviz_and_earnings_calendar(cls, 
                                            earnings_calendar, 
                                            finviz_data,
-                                           sort_value=DAYS_TO_EARNINGS_KEY):
+                                           sort_value=DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT):
 
-        filtered_data = finviz_data.T[CUSTOM_TABLE_ALL_FIELDS]
+        filtered_data = finviz_data.T[CUSTOM_TABLE_ALL_FIELDS + POST_GENERATED_FIELDS]
         earnings_calendar = earnings_calendar.rename(columns={'symbol': TICKER_KEY})
         earnings_calendar = earnings_calendar.reset_index()
         earnings_calendar = earnings_calendar.merge(
@@ -126,25 +187,26 @@ class EarningSpy:
     @classmethod
     def get_earning_calendar_for(cls, 
                                  symbols,
-                                 scope=(-90, 90)):
+                                 scope=(-45, 45),
+                                 web=False):
         """
         :symbols list of symbols 
         :scope 
 
         """
-        data = EarningsCalendar.get_or_create_earnings_calendar(update=True)
+        data = EarningsCalendar.get_or_create_earnings_calendar(update=True, web=web)
         results = data[data['symbol'].isin(symbols)]
         if not scope:
             return results.sort_index()
         
         # Earning calendar comes from de day 1 and we need just 90 days up and down
-        results = results[(results[DAYS_TO_EARNINGS_KEY] < scope[1]) & 
-                          (results[DAYS_TO_EARNINGS_KEY] > scope[0])]
+        results = results[(results[DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT] < scope[1]) & 
+                          (results[DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT] > scope[0])]
 
         return results.sort_index()
     
     @classmethod
-    def get_micro_small_medium_caps(cls, cap='micro', scope=(-15, 5)):
+    def get_calendar_by_cap(cls, cap='micro', scope=(-15, 5)):
 
         if cap not in ['micro', 'small', 'medium', 'all']:
             raise Exception("Invalid scope valid scopes ['micro', 'small', 'medium', 'all']")
@@ -157,14 +219,15 @@ class EarningSpy:
 
         finviz_data = factory[cap](order='marketcap')
         calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
-                                                scope=scope)
+                                                scope=scope,
+                                                web=True)
 
         finviz_calendar = cls.merge_finviz_and_earnings_calendar(
             earnings_calendar=calendar, 
             finviz_data=finviz_data, 
         )
 
-        return finviz_calendar
+        return calendar_formatter(finviz_calendar)
 
 
 
@@ -175,28 +238,12 @@ class CalendarLoader:
 
     def get_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
         """Returns the upcoming earnings release"""
-        return self.data[(self.data[DAYS_TO_EARNINGS_KEY] >= 0)
-               & (self.data[DAYS_TO_EARNINGS_KEY] <= days)]
-    
-    def get_post_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
-        return self.data[(self.data[DAYS_TO_EARNINGS_KEY] < 0) & 
-                         (self.data[DAYS_TO_EARNINGS_KEY] >= -days)]
-
-    def get_pre_earnings_from_this_month(self):
-        return self.data[(self.data[DAYS_TO_EARNINGS_KEY] > -30) & 
-                         (self.data[DAYS_TO_EARNINGS_KEY] < 0)]
-
-    def get_pre_earnings_from_one_month(self, days=30):
-        return self.data[(self.data[DAYS_TO_EARNINGS_KEY] > -60) & 
-                         (self.data[DAYS_TO_EARNINGS_KEY] < -days)]
-    
-    def get_pre_earnings_from_two_months(self, days=30):
-        return self.data[(self.data[DAYS_TO_EARNINGS_KEY] > -90) & 
-                         (self.data[DAYS_TO_EARNINGS_KEY] < -days)]
+        return self.data[(self.data[DAYS_TO_EARNINGS_KEY_CAPITAL] >= 0)
+               & (self.data[DAYS_TO_EARNINGS_KEY_CAPITAL] <= days)]
 
     def get_report_dates_by_ticker(self, ticker):
         "returns a Series"
-        return self.data[self.data[TICKER_KEY] == ticker][TICKER_KEY]
+        return self.data[self.data[TICKER_KEY_CAPITAL] == ticker][TICKER_KEY_CAPITAL]
     
     def store_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS, path='upcoming.csv', keep='first'):
         """
@@ -210,10 +257,6 @@ class CalendarLoader:
             raise Exception('Nothing to update on old pre-earnings')
         return self._store(pre_earnings, old_data, path, keep)
 
-    def store_post_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS, path='reported.csv', keep='first'):
-        old_data = pd.read_csv(path, index_col=0)
-        post_earnings = self.get_post_earnings(days)
-        return self._store(post_earnings, old_data, path, keep)
     
     def _store(self, new_data, old_data, path,  keep):
 
@@ -228,11 +271,10 @@ class CalendarLoader:
             merged_data = merged_data.reset_index()
         except Exception:
             pass
-        merged_data = merged_data.drop_duplicates([EARNINGS_DATE_KEY, TICKER_KEY], keep=keep)
+        merged_data = merged_data.drop_duplicates([EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep=keep)
         merged_data = self._update_days_left(merged_data)
-        merged_data = merged_data.sort_values(DAYS_TO_EARNINGS_KEY)
+        merged_data = merged_data.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL)
         merged_data = merged_data.set_index([EARNINGS_DATE_KEY])
-        merged_data['updatedAt'] = datetime.now().strftime(DEFAULT_DATE_FORMAT)
         merged_data = merged_data.drop(['index', 'level_0'], axis=1, errors='ignore')
         merged_data.to_csv(path)
         return merged_data 
@@ -247,14 +289,11 @@ class CalendarLoader:
     def _update_days_left(data):
         data = data.reset_index(drop=True)
         data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
-        data[DAYS_TO_EARNINGS_KEY] = data[EARNINGS_DATE_KEY].apply(EarningsCalendar._compute_days_left)
+        data[DAYS_TO_EARNINGS_KEY_CAPITAL] = data[EARNINGS_DATE_KEY].apply(EarningsCalendar._compute_days_left)
         return data
 
     def update_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
         self.store_pre_earnings(days=days, path=config.PRE_EARNINGS_DATA_PATH, keep='first')
-
-    def update_post_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
-        self.store_post_earnings(days=days, path=config.POST_EARNINGS_DATA_PATH, keep='first')
 
     @classmethod
     def load_stored_pre_earnings(cls):
@@ -262,16 +301,7 @@ class CalendarLoader:
         keep_first = pd.read_csv(config.PRE_EARNINGS_DATA_PATH)
         keep_first = cls._update_days_left(keep_first)
         keep_first = keep_first.set_index([EARNINGS_DATE_KEY])
-        keep_first = keep_first.sort_values(DAYS_TO_EARNINGS_KEY)
+        keep_first = keep_first.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL)
         keep_first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
 
         return keep_first
-
-    @classmethod
-    def load_stored_post_earnings(cls):
-        post = pd.read_csv(config.POST_EARNINGS_DATA_PATH)
-        post = cls._update_days_left(post)
-        post =  post.set_index([EARNINGS_DATE_KEY])
-        post.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
-        post = post.sort_values(DAYS_TO_EARNINGS_KEY)
-        return cls(post)

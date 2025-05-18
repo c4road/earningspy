@@ -394,6 +394,23 @@ class Screener(object):
                         self.analysis.extend(value[1])
 
         return self.data
+    
+    def get_ticker_details_by_ticker(self, ticker):
+
+        """
+        Downloads the details of all tickers shown by the table.
+        """
+
+        ticker_data = sequential_data_scrape(
+            scrape.download_ticker_details,
+            [
+                f"https://finviz.com/quote.ashx?&t={ticker}"
+                for row in self.data
+            ],
+            self._user_agent,
+        )
+
+        return ticker_data
 
     def __check_rows(self):
         """
