@@ -15,15 +15,29 @@ class CalendarLoader:
 
     def __init__(self, data=None, path=None):
         self.data = self._load_raw_data(data)
+    
+    @staticmethod
+    def _update_days_left(data):
+        data = data.reset_index(drop=True)
+        data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
+        data[DAYS_TO_EARNINGS_KEY_CAPITAL] = data[EARNINGS_DATE_KEY].apply(EarningsCalendar._compute_days_left)
+        return data
+
+    @classmethod
+    def load_stored_pre_earnings(cls):
+
+        keep_first = pd.read_csv(config.PRE_EARNINGS_DATA_PATH)
+        keep_first = cls._update_days_left(keep_first)
+        keep_first = keep_first.set_index([EARNINGS_DATE_KEY])
+        keep_first = keep_first.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL)
+        keep_first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
+
+        return keep_first
 
     def get_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
         """Returns the upcoming earnings release"""
         return self.data[(self.data[DAYS_TO_EARNINGS_KEY_CAPITAL] >= 0)
                & (self.data[DAYS_TO_EARNINGS_KEY_CAPITAL] <= days)]
-
-    def get_report_dates_by_ticker(self, ticker):
-        "returns a Series"
-        return self.data[self.data[TICKER_KEY_CAPITAL] == ticker][TICKER_KEY_CAPITAL]
     
     def store_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS, path='upcoming.csv', keep='first'):
         """
@@ -65,23 +79,5 @@ class CalendarLoader:
         data = data.set_index([EARNINGS_DATE_KEY])
         return data
 
-    @staticmethod
-    def _update_days_left(data):
-        data = data.reset_index(drop=True)
-        data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
-        data[DAYS_TO_EARNINGS_KEY_CAPITAL] = data[EARNINGS_DATE_KEY].apply(EarningsCalendar._compute_days_left)
-        return data
-
     def update_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
         self.store_pre_earnings(days=days, path=config.PRE_EARNINGS_DATA_PATH, keep='first')
-
-    @classmethod
-    def load_stored_pre_earnings(cls):
-
-        keep_first = pd.read_csv(config.PRE_EARNINGS_DATA_PATH)
-        keep_first = cls._update_days_left(keep_first)
-        keep_first = keep_first.set_index([EARNINGS_DATE_KEY])
-        keep_first = keep_first.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL)
-        keep_first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
-
-        return keep_first

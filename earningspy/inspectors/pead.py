@@ -277,7 +277,7 @@ class PEADInspector:
 
         return np.round(value, 2)
 
-    def get_earning_vix(self):
+    def get_earnings_vix(self):
         self.new_training_data.loc[:, 'EARNING_VIX'] = self.new_training_data.apply(
             lambda row: self.get_vix_for_date(row), axis=1)
         return self.new_training_data

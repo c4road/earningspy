@@ -26,42 +26,10 @@ from earningspy.common.constants import (
     DEFAULT_DAYS_PRE_EARNINGS,
 )
 from earningspy.config import Config
+from earningspy.calendars.utils import calendar_pre_formatter
 
 config = Config()
 
-def calendar_formatter(data):
-    data = data.drop(['LTDebt/Eq', 'Dividend Ex-Date'], axis=1)
-    data.columns = data.columns.str.replace(' ', '_')
-    data.columns = data.columns.str.upper()
-    data.columns = data.columns.str.strip()
-    data = data.rename(columns={'VOLATILITY_W': 'VOLATILITY_HIGH', 'VOLATILITY_M': 'VOLATILITY_LOW'})
-
-    data['LTDEBT/EQ'] = pd.to_numeric(data['LTDEBT/EQ'], errors='coerce')
-    data['IS_AMC'] = data['IS_AMC'].fillna(0).astype('int64')
-    data['IS_BMO'] = data['IS_BMO'].fillna(0).astype('int64')
-
-    # drop columns that are not useful or preprocessed
-    data = data.drop([
-        'FISCALDATEENDING',
-        'COUNTRY',
-        'INDEX', 
-        'ESTIMATE',
-        'EARNINGS', 
-        'CURRENCY', 
-        'RETURN%_1Y', 
-        'DIVIDEND_EST.', 
-        'DIVIDEND_TTM', 
-        'OPTION/SHORT', 
-        'VOLATILITY', 
-        '52W_HIGH', 
-        '52W_LOW', 
-        '52W_RANGE'
-    ], axis=1)
-
-    # round to four decimal places
-    data = data.round(4)
-    return data
-    
 
 class EarningSpy:
 
@@ -83,8 +51,7 @@ class EarningSpy:
                 earnings_calendar=earnings_calendar, 
                 finviz_data=finviz_data)
  
-        return calendar_formatter(finviz_calendar)
-
+        return calendar_pre_formatter(finviz_calendar)
 
     @classmethod
     def get_finviz(cls,
@@ -227,81 +194,4 @@ class EarningSpy:
             finviz_data=finviz_data, 
         )
 
-        return calendar_formatter(finviz_calendar)
-
-
-
-class CalendarLoader:
-
-    def __init__(self, data=None, path=None):
-        self.data = self._load_raw_data(data)
-
-    def get_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
-        """Returns the upcoming earnings release"""
-        return self.data[(self.data[DAYS_TO_EARNINGS_KEY_CAPITAL] >= 0)
-               & (self.data[DAYS_TO_EARNINGS_KEY_CAPITAL] <= days)]
-
-    def get_report_dates_by_ticker(self, ticker):
-        "returns a Series"
-        return self.data[self.data[TICKER_KEY_CAPITAL] == ticker][TICKER_KEY_CAPITAL]
-    
-    def store_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS, path='upcoming.csv', keep='first'):
-        """
-        Use keep=last to preserve the data that is more recent
-        this will store a new item until days left is equal to 0. Which means
-        the report date less than 24 hours away.
-        """
-        old_data = pd.read_csv(path, index_col=0)
-        pre_earnings = self.get_pre_earnings(days)
-        if pre_earnings.empty:
-            raise Exception('Nothing to update on old pre-earnings')
-        return self._store(pre_earnings, old_data, path, keep)
-
-    
-    def _store(self, new_data, old_data, path,  keep):
-
-        if new_data.empty:
-            print("new data is empty nothing to concat")
-            return
-        merged_data = pd.concat([old_data, new_data], join='outer')
-        merged_data.index = pd.to_datetime(merged_data.index)
-        if len(merged_data.columns) != len(old_data.columns):
-            raise Exception("Invalid concatenation, resulting data has diferent columns length")
-        try:
-            merged_data = merged_data.reset_index()
-        except Exception:
-            pass
-        merged_data = merged_data.drop_duplicates([EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep=keep)
-        merged_data = self._update_days_left(merged_data)
-        merged_data = merged_data.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL)
-        merged_data = merged_data.set_index([EARNINGS_DATE_KEY])
-        merged_data = merged_data.drop(['index', 'level_0'], axis=1, errors='ignore')
-        merged_data.to_csv(path)
-        return merged_data 
-
-    def _load_raw_data(self, data):
-        data = data.reset_index()
-        data = self._update_days_left(data)
-        data = data.set_index([EARNINGS_DATE_KEY])
-        return data
-
-    @staticmethod
-    def _update_days_left(data):
-        data = data.reset_index(drop=True)
-        data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
-        data[DAYS_TO_EARNINGS_KEY_CAPITAL] = data[EARNINGS_DATE_KEY].apply(EarningsCalendar._compute_days_left)
-        return data
-
-    def update_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):
-        self.store_pre_earnings(days=days, path=config.PRE_EARNINGS_DATA_PATH, keep='first')
-
-    @classmethod
-    def load_stored_pre_earnings(cls):
-
-        keep_first = pd.read_csv(config.PRE_EARNINGS_DATA_PATH)
-        keep_first = cls._update_days_left(keep_first)
-        keep_first = keep_first.set_index([EARNINGS_DATE_KEY])
-        keep_first = keep_first.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL)
-        keep_first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
-
-        return keep_first
+        return calendar_pre_formatter(finviz_calendar)
