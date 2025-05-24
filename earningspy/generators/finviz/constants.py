@@ -1,140 +1,96 @@
-CUSTOM_TABLE_FIELDS_ON_URL = """&c=0,1,2,3,4,5,6,7,8,9,10,11,13,75,14,15,16,
-77,17,18,19,21,23,22,82,78,127,128,24,25,85,26,27,28,29,30,31,84,32,33,34,37,
-38,40,41,43,44,46,47,48,49,50,51,57,58,59,68,76,62,63,64,67,65,66,120"""
+CUSTOM_TABLE_FIELDS_ON_URL = """&c=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,75,16,
+77,17,18,19,20,21,23,22,82,78,127,128,24,25,85,26,27,28,29,30,31,84,32,33,34,35,36,37,
+38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,57,58,59,68,69,73,74,76,79,80,81,
+83,62,63,64,67,65,66,120,130,131,132,133,134"""
 
-CUSTOM_TABLE_ALL_FIELDS = [
-    # Market Metadata
+
+CUSTOM_TABLE_ALL_FIELDS_NEW = [
     'Ticker',
     'Company',
-
-    # Categorical Data
-    'Country',
     'Sector',
     'Industry',
-    'Index',
-
-    # Comparables per Sector or Industry
-    'Market Cap',                       # Market Cap = Total number of shares * market price
-    'P/E',                              # P/E = Average Common Stock Price / Net Income Per Share
-    'PEG',                              # PEG = (P/E) / Annual EPS Growth
-    'P/S',                              # P/S = Current Market Price / Total Revenues Per Share
-    'P/B',                              # P/B = Current Market Price / (Total Assets - Total Liabilities)
-    'P/FCF',                            # P/FCF = Current Market Price / Cash Flow per Share
+    'Country',
+    'Market Cap',
+    'P/E',
+    'Fwd P/E',
+    'PEG',
+    'P/S',
+    'P/B',
+    'P/C',
+    'P/FCF',
+    'Dividend',
     'Payout Ratio',
-    'EPS',                              # EPS = (Net Income - Dividends On Preferred Stock) / Average Outstanding Shares
+    'EPS',
+    'EPS next Q',
     'EPS this Y',
+    'EPS next Y',
     'EPS past 5Y',
     'EPS next 5Y',
-    'EPS Y/Y TTM',
-    'EPS (ttm)',
     'Sales past 5Y',
     'Sales Q/Q',
+    'Sales YoY TTM',
     'EPS Q/Q',
-    'Book/sh',
-    'Cash/sh',
-    'P/C',
-
-    # Expectations
-    'EPS next Q',
-    'EPS next Y',
-    'Fwd P/E',                          # Forward P/E = Current Market Price / Forecasted Earnings Per Share
-    'Forward P/E',
+    'Sales',
+    'Income',
     'EPS Surprise',
     'Revenue Surprise',
-    'Sales Surprise',
-    'Recom',     # Analyst Recommendation 1.0 Strong Buy, 2.0 Buy, 3.0 Hold, 4.0 Sell, 5.0 Strong Sell
-
-    # Credit Score
-    'LTDebt/Eq',
-    'Debt/Eq',                          # Debt/Equity = Current Liabilities / (Share Holder's Equity)
-                                        # Debt/Equity = Current Liabilities / (Total Assets - Total Liabilities)
-                                        # Debt/Equity = Current Liabilities / (Book Value)
-    'Current Ratio',                    # Current Ratio = Current Assets / Current Liabilities
-    'LT Debt/Eq',                       # LT Debt/Equity = Long Term Debt / (Share Holder's Equity)
-                                        # LT Debt/Equity = Long Term Debt / (Total Assets - Total Liabilities)
-                                        # LT Debt/Equity = Long Term Debt / (Book Value)
-
-    # Liquidity
-    'Quick Ratio',                      # Quick Ratio = (Current Assets - Inventories) / Current Liabilities    
-
-    # Dividend
-    'Dividend',
-    'Dividend Est.',
-    'Dividend TTM',
-    'Dividend Ex-Date',
-    'Payout',
-
-    # Agent Performance
-    'ROA',                              # ROA = Annual Earnings / Total Assets
-    'ROE',                              # ROE = Annual Net Income / Share Holder's Equity
-    'ROI',                              # ROI = (Gain from Investment - Cost of Investment) / Cost of Investment.
-    'Employees',
-
-    # Technicals
-    'Perf Week',                        # Last 5 trading days
-    'Perf Month',                       # Last 21 trading days
-    'Perf Quart',                       # Last 63 trading days
-    'Perf Year',                        # Last 252 trading days
-    'Perf YTD',
-    'Perf Quarter',
-    'Perf Half Y',                      # Last 126 trading days
-    'SMA20',
-    'SMA50',
-    'SMA200',
-    '52W High',
-    '52W Low',
-    'RSI',                              # Indicates oversold (buy signal) and overbought (sell signal) price levels for given stock.
-    '52W Range',
-
-    # Volatility
-    'Beta',                             # (5 years) Calculated on monthly returns 
-    'ATR',
-    'ATR (14)',
-    'Volatility',                       # Return daily high/low % range.
-    'Volatility M',
-    'Volatility W',
-    'RSI (14)',
-
-
-    # Accounting
-    'Sales',
-    'Sales Y/Y TTM',
-    'Income',
-    'Earnings',
-    'Oper M',
-    'Profit M',
-    'Oper. Margin',                     # Operating Margin = Operating Income / Net Sales
-    'Profit Margin',                    # Net Profit Margin = Net Income / Revenues
-    'Gross Margin',                     # Gross Margin = (Total Sales - Costs) / Total Sales
-
-    # Market Dept
-    'Volume',
-    'Avg Volume',
-    'Rel Volume',
     'Outstanding',
-    'Shs Outstand',                     # Shares Outstanding = Total Number Of Shares - Shares Held In Treasury
     'Float',
     'Float %',
     'Insider Own',
     'Insider Trans',
     'Inst Own',
     'Inst Trans',
-
-    # Short 
-    'Short Ratio',                      # The number of shares held short divided by the stock's average daily trading volume
-    'Short Interest',                   # Short interest indicates how many company shares are sold short and not yet covered.
-    'Shs Float',                        # Shares Float = Shares Outstanding - Insider Shares - Above 5% Owners - Rule 144 Shares
-    'Short Float',                      # The number of shares short divided by total amount of shares float, expressed in %.
-
-                       
+    'Short Float',
+    'Short Ratio',
+    'Short Interest',
+    'ROA',
+    'ROE',
+    'ROI',
+    'Curr R',
+    'Quick R',
+    'LTDebt/Eq',
+    'Debt/Eq',
+    'Gross M',
+    'Oper M',
+    'Profit M',
+    'Perf Week',
+    'Perf Month',
+    'Perf Quart',
+    'Perf Half',
+    'Perf Year',
+    'Perf YTD',
+    'Beta',
+    'ATR',
+    'Volatility W',
+    'Volatility M',
+    'SMA20',
+    'SMA50',
+    'SMA200',
+    '52W High',
+    '52W Low',
+    'RSI',
+    'Earnings',
+    'Target Price',
+    'Book/sh',
+    'Cash/sh',
+    'Employees',
+    'Index',
+    'Optionable',
+    'Prev Close',
+    'Shortable',
+    'Recom',
+    'Avg Volume',
+    'Rel Volume',
+    'Volume',
     'Price',
     'Change',
     'Return% 1Y',
-
-    'Target Price',
-    'Option/Short',
-
-    'Prev Close',
+    'Dividend TTM',
+    'Dividend Ex Date',
+    'EPS YoY TTM',
+    'EPS YoY TTM',
+    '52W Range'
 ]
 
 POST_GENERATED_FIELDS = [
@@ -154,95 +110,12 @@ POST_GENERATED_FIELDS = [
     'IS_USA',
 ]
 
-PERFORMANCE_TABLE_ALL_FIELDS = [
-    'Ticker',
-    'Perf Week',
-    'Perf Month',
-    'Perf Quart',
-    'Perf Half',
-    'Perf Year',
-    'Perf YTD',
-    'Volatility W',
-    'Volatility M',
-    'Recom',
-    'Avg Volume',
-    'Rel Volume',
-    'Price',
-    'Change',
-    'Volume',
-    'Index',
-    'P/E',
-    'EPS (ttm)',
-    'Insider Own',
-    'Shs Outstand',
-    'Market Cap',
-    'Forward P/E',
-    'EPS next Y',
-    'Insider Trans',
-    'Shs Float',
-    'Income',
-    'PEG',
-    'EPS next Q',
-    'Inst Own',
-    'Short Float',
-    'Perf Quarter',
-    'Sales',
-    'P/S',
-    'EPS this Y',
-    'Inst Trans',
-    'Short Ratio',
-    'Perf Half Y',
-    'Book/sh',
-    'P/B',
-    'ROA',
-    'Short Interest',
-    'Cash/sh',
-    'P/C',
-    'EPS next 5Y',
-    'ROE',
-    '52W Range',
-    'Dividend Est.',
-    'P/FCF',
-    'EPS past 5Y',
-    'ROI',
-    '52W High',
-    'Beta',
-    'Dividend TTM',
-    'Quick Ratio',
-    'Sales past 5Y',
-    'Gross Margin',
-    '52W Low',
-    'ATR (14)',
-    'Dividend Ex-Date',
-    'Current Ratio',
-    'EPS Y/Y TTM',
-    'Oper. Margin',
-    'RSI (14)',
-    'Volatility',
-    'Employees',
-    'Debt/Eq',
-    'Sales Y/Y TTM',
-    'Profit Margin',
-    'Target Price',
-    'Option/Short',
-    'LT Debt/Eq',
-    'EPS Q/Q',
-    'Payout',
-    'Prev Close',
-    'Sales Surprise',
-    'EPS Surprise',
-    'Sales Q/Q',
-    'Earnings',
-    'SMA20',
-    'SMA50',
-    'SMA200'
-]
 
 MONEY_COLUMNS = [
     'Avg Volume', 
-    'Shs Outstand',
+    'Outstanding',
     'Market Cap',
-    'Shs Float',
+    'Float',
     'Income',
     'Sales',
     'Short Interest',
@@ -263,10 +136,10 @@ PERCENTAJE_COLUMNS = [
     'EPS next Y',
     'Insider Trans',
     'Inst Own',
-    'Perf Quarter',
+    'Perf Quart',
     'EPS this Y',
     'Inst Trans',
-    'Perf Half Y',
+    'Perf Half',
     'ROA',
     'EPS next 5Y',
     'ROE',
@@ -274,13 +147,13 @@ PERCENTAJE_COLUMNS = [
     'ROI',
     '52W High',
     'Sales past 5Y',
-    'Gross Margin',
+    'Gross M',
     '52W Low',
     'Sales Q/Q',
-    'Oper. Margin',
+    'Oper M',
     'EPS Q/Q',
-    'Profit Margin',
-    'Payout',
+    'Profit M',
+    'Payout Ratio',
     'SMA20',
     'SMA50',
     'SMA200',
@@ -289,32 +162,30 @@ PERCENTAJE_COLUMNS = [
     'EPS Surprise',
     'Revenue Surprise',
     'Float %',
-    'Float Short',
     'Oper M',
     'Profit M',
     'Short Float',
-    'EPS Y/Y TTM',
-    'Sales Y/Y TTM',
-    'Sales Surprise',
+    'EPS YoY TTM',
+    'Sales YoY TTM',
 ]
 
 NUMERIC_COLUMNS = [
     'P/FCF',
     'Beta',
-    'Quick Ratio',
+    'EPS YoY TTM',
     'ATR',
     'Employees',
-    'Current Ratio',
-    'RSI (14)',
+    'Curr R',
+    'Quick R',
+    'RSI',
     'Debt/Eq',
-    'LT Debt/Eq',
+    'LTDebt/Eq',
     'Recom',
     'Rel Volume',
     'Price',
     'Volume',
     'P/E',
-    'EPS (ttm)',
-    'Forward P/E',
+    'Fwd P/E',
     'PEG',
     'P/S',
     'Book/sh',
@@ -330,9 +201,9 @@ NUMERIC_COLUMNS = [
     'RSI',
     'Avg Volume',
     'Return% 1Y',
-    'Shs Outstand',
-    'Shs Float',
-    'ATR (14)',
+    'Outstanding',
+    'Float',
+    'ATR',
     'Prev Close',
 ]
 
@@ -488,3 +359,5 @@ ALLOWED_INDUSTRIES = [
     "Utilities - Renewable",
     "Waste Management"
 ]
+
+TICKER_KEY = 'Ticker'

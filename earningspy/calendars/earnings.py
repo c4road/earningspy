@@ -1,17 +1,17 @@
 import pandas as pd
 from datetime import datetime
-from earningspy.generators.finviz.utils import (
+from earningspy.generators.finviz.data import (
     get_filters,
-    get_dataframe_by_industry,
-    get_dataframe_by_sector,
-    get_dataframe_by_index,
-    get_dataframe_by_tickers,
-    get_micro_caps_data,
-    get_small_caps_data,
-    get_medium_caps_data,
+    get_by_industry,
+    get_by_sector,
+    get_by_index,
+    get_by_industry,
+    get_micro_caps,
+    get_small_caps,
+    get_medium_caps,
 )
 from earningspy.generators.finviz.constants import (
-    CUSTOM_TABLE_ALL_FIELDS,
+    CUSTOM_TABLE_ALL_FIELDS_NEW,
     POST_GENERATED_FIELDS
 )
 from earningspy.generators.alphavantage.calendar import EarningsCalendar
@@ -19,11 +19,8 @@ from earningspy.common.constants import (
     TRACKED_INDUSTRIES,
     EARNINGS_DATE_KEY,
     TICKER_KEY,
-    TICKER_KEY_CAPITAL,
     DEFAULT_DATE_FORMAT,
-    DAYS_TO_EARNINGS_KEY_CAPITAL,
     DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT,
-    DEFAULT_DAYS_PRE_EARNINGS,
 )
 from earningspy.config import Config
 from earningspy.calendars.utils import calendar_pre_formatter
@@ -57,42 +54,31 @@ class EarningSpy:
     def get_finviz(cls,
                    sector=None,
                    industry=None,
-                   index=None,
-                   table='Custom', 
-                   details=True):
+                   index=None):
         
         if industry and not index and not sector:
-            finviz_data = get_dataframe_by_industry(
-                industry, 
-                details=details, 
-                table=table)
+            finviz_data = get_by_industry(industry)
         elif sector and not index and not industry:
-            finviz_data = get_dataframe_by_sector(
-                sector, 
-                details=details, 
-                table=table)
+            finviz_data = get_by_sector(sector)
         elif index and not sector and not industry:
-            finviz_data = get_dataframe_by_index(
-                index, 
-                details=details, 
-                table=table)
+            finviz_data = get_by_index(index)
         else:
             raise Exception('You can only pass sector, industry, or index not several of them')
 
         return finviz_data
     
     @classmethod
-    def get_finviz_by_tickers(cls, tickers):
+    def get_finviz_get_by_industry(cls, tickers):
         """
         :param tickers: list of tickers
         :return: DataFrame with the finviz data for the tickers
         """
-        finviz_data = get_dataframe_by_tickers(tickers)
+        finviz_data = get_by_industry(tickers)
         return finviz_data
     
     @classmethod
     def get_custom_calendar(cls, tickers):
-        finviz_data = cls.get_finviz_by_tickers(tickers)
+        finviz_data = cls.get_finviz_get_by_industry(tickers)
 
         earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, web=True)
         finviz_calendar = cls.merge_finviz_and_earnings_calendar(
@@ -121,10 +107,7 @@ class EarningSpy:
             all_tracked_industries = []
             for industry in industries:
                 print('Updating {}'.format(industry))
-                industry_data = cls.get_finviz(industry=industry, 
-                                               table=table, 
-                                               raw=raw, 
-                                               save=True)
+                industry_data = cls.get_finviz(industry=industry)
                 industry_data.reset_index(inplace=True)
                 all_tracked_industries.append(industry_data)
             result = pd.concat(all_tracked_industries)
@@ -179,12 +162,12 @@ class EarningSpy:
             raise Exception("Invalid scope valid scopes ['micro', 'small', 'medium', 'all']")
         
         factory = {
-            'micro': get_micro_caps_data,
-            'small': get_small_caps_data,
-            'medium': get_medium_caps_data, 
+            'micro': get_micro_caps,
+            'small': get_small_caps,
+            'medium': get_medium_caps, 
         }
 
-        finviz_data = factory[cap](order='marketcap')
+        finviz_data = factory[cap]()
         calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
                                                 scope=scope,
                                                 web=True)
