@@ -9,21 +9,19 @@ from earningspy.generators.finviz.data import (
     get_micro_caps,
     get_small_caps,
     get_medium_caps,
+    get_by_earnings_date,
 )
-from earningspy.generators.finviz.constants import (
-    CUSTOM_TABLE_ALL_FIELDS_NEW,
-    POST_GENERATED_FIELDS
-)
-from earningspy.generators.alphavantage.calendar import EarningsCalendar
-from earningspy.common.constants import (
-    TRACKED_INDUSTRIES,
-    EARNINGS_DATE_KEY,
-    TICKER_KEY,
-    DEFAULT_DATE_FORMAT,
-    DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT,
-)
+
 from earningspy.config import Config
-from earningspy.calendars.utils import calendar_pre_formatter
+from earningspy.calendars.utils import calendar_pre_formatter, days_left
+from earningspy.generators.alphavantage.calendar import EarningsCalendar
+from earningspy.common.constants import (  
+    FINVIZ_EARNINGS_DATE_KEY,
+    DAYS_LEFT_KEY,
+    ALLOWED_CAPITALIZATIONS,
+    DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT,
+
+)
 
 config = Config()
 
@@ -35,20 +33,16 @@ class EarningSpy:
         return get_filters(*args, **kwargs)
 
     @classmethod
-    def get_calendar(cls, sector=None, industry=None, index=None, scope=(-90, 90)):
+    def get_calendar(cls, sector=None, industry=None, index=None, future_only=True):
         
         finviz_data = cls.get_finviz(sector=sector, 
                                      industry=industry, 
                                      index=index)
 
-        earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
-                                                         scope=scope,
-                                                         web=True)
-        finviz_calendar = cls.merge_finviz_and_earnings_calendar(
-                earnings_calendar=earnings_calendar, 
-                finviz_data=finviz_data)
- 
-        return calendar_pre_formatter(finviz_calendar)
+        finviz_data = cls._arrange(finviz_data)
+        if future_only:
+            finviz_data = finviz_data[finviz_data[DAYS_LEFT_KEY] >= 0]
+        return finviz_data
 
     @classmethod
     def get_finviz(cls,
@@ -66,100 +60,40 @@ class EarningSpy:
             raise Exception('You can only pass sector, industry, or index not several of them')
 
         return finviz_data
-    
+
     @classmethod
     def get_finviz_get_by_industry(cls, tickers):
-        """
-        :param tickers: list of tickers
-        :return: DataFrame with the finviz data for the tickers
-        """
-        finviz_data = get_by_industry(tickers)
-        return finviz_data
-    
-    @classmethod
-    def get_custom_calendar(cls, tickers):
-        finviz_data = cls.get_finviz_get_by_industry(tickers)
-
-        earnings_calendar = cls.get_earning_calendar_for(finviz_data.T.index, web=True)
-        finviz_calendar = cls.merge_finviz_and_earnings_calendar(
-                earnings_calendar=earnings_calendar, 
-                finviz_data=finviz_data)
-        
-        return finviz_calendar
-    
-    def get_this_week_earnings():
-        pass
-
-    def get_previous_week_earnings():
-        pass
-
-    def next_week_earnings():
-        pass
-
+        data = get_by_industry(tickers)
+        return cls._arrange(data)
 
     @classmethod
-    def gel_all_tracked_industries(cls, 
-                                   table='Custom', 
-                                   raw=False, 
-                                   scope='all',
-                                   industries=TRACKED_INDUSTRIES):
-        if scope == 'all':
-            all_tracked_industries = []
-            for industry in industries:
-                print('Updating {}'.format(industry))
-                industry_data = cls.get_finviz(industry=industry)
-                industry_data.reset_index(inplace=True)
-                all_tracked_industries.append(industry_data)
-            result = pd.concat(all_tracked_industries)
-        else:
-            Exception("Not implemented use scope='all'")
-        return result
+    def get_this_week_earnings(cls):
+        data = get_by_earnings_date(scope="this_week")
+        return cls._arrange(data)
 
     @classmethod
-    def merge_finviz_and_earnings_calendar(cls, 
-                                           earnings_calendar, 
-                                           finviz_data,
-                                           sort_value=DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT):
-
-        filtered_data = finviz_data.T[CUSTOM_TABLE_ALL_FIELDS + POST_GENERATED_FIELDS]
-        earnings_calendar = earnings_calendar.rename(columns={'symbol': TICKER_KEY})
-        earnings_calendar = earnings_calendar.reset_index()
-        earnings_calendar = earnings_calendar.merge(
-            filtered_data, 
-            on=TICKER_KEY, 
-            validate='many_to_one'
-        )
-        earnings_calendar = earnings_calendar.set_index(EARNINGS_DATE_KEY)
-        earnings_calendar = earnings_calendar.sort_values(sort_value)
-        earnings_calendar['dataDate'] = datetime.now().strftime(DEFAULT_DATE_FORMAT)
-        return earnings_calendar
+    def get_previous_week_earnings(cls):
+        data = get_by_earnings_date(scope="last_week")
+        return cls._arrange(data)
 
     @classmethod
-    def get_earning_calendar_for(cls, 
-                                 symbols,
-                                 scope=(-45, 45),
-                                 web=False):
-        """
-        :symbols list of symbols 
-        :scope 
+    def get_next_week_earnings(cls):
+        data = get_by_earnings_date(scope="next_week")
+        return cls._arrange(data)
 
-        """
-        data = EarningsCalendar.get_or_create_earnings_calendar(update=True, web=web)
-        results = data[data['symbol'].isin(symbols)]
-        if not scope:
-            return results.sort_index()
-        
-        # Earning calendar comes from de day 1 and we need just 90 days up and down
-        results = results[(results[DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT] < scope[1]) & 
-                          (results[DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT] > scope[0])]
+    def get_today_bmo(cls):
+        data = get_by_earnings_date(scope="today_bmo")
+        return cls._arrange(data)
 
-        return results.sort_index()
-    
+    def get_yesterday_amc(cls):
+        data = get_by_earnings_date(scope="yesterday_amc")
+        return cls._arrange(data)
+
     @classmethod
-    def get_calendar_by_cap(cls, cap='micro', scope=(-15, 5)):
+    def get_by_capitalization(cls, cap='micro'):
 
-        if cap not in ['micro', 'small', 'medium', 'all']:
-            raise Exception("Invalid scope valid scopes ['micro', 'small', 'medium', 'all']")
+        if cap not in ALLOWED_CAPITALIZATIONS:
+            raise Exception(f"Invalid scope valid scopes {ALLOWED_CAPITALIZATIONS}")
         
         factory = {
             'micro': get_micro_caps,
@@ -168,13 +102,32 @@ class EarningSpy:
         }
 
         finviz_data = factory[cap]()
-        calendar = cls.get_earning_calendar_for(finviz_data.T.index, 
-                                                scope=scope,
-                                                web=True)
 
-        finviz_calendar = cls.merge_finviz_and_earnings_calendar(
-            earnings_calendar=calendar, 
-            finviz_data=finviz_data, 
-        )
+        return cls._arrange(finviz_data)
 
-        return calendar_pre_formatter(finviz_calendar)
+    @classmethod
+    def _compute_days_left(cls, finviz_data):
+        finviz_data.loc[:, DAYS_LEFT_KEY] = finviz_data.apply(lambda row: days_left(row), axis=1)
+        return finviz_data
+
+    @classmethod
+    def _arrange(cls, data):
+        data = data.set_index(FINVIZ_EARNINGS_DATE_KEY, drop=True)
+        data = data.sort_index(ascending=True)
+        data = cls._compute_days_left(data)
+        return calendar_pre_formatter(data)
+
+    @classmethod
+    def get_earning_date_for_missings(cls, 
+                                 symbols,
+                                 web=False):
+
+        data = EarningsCalendar.get_or_create_earnings_calendar(update=True, web=web)
+        results = data[data['symbol'].isin(symbols)]
+
+        # only dates from this trimester, 15 days margin of error
+        results = results[(results[DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT] < 90) & 
+                          (results[DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT] > 0)]
+
+
+        return results.sort_index()

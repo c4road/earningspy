@@ -5,6 +5,7 @@ from earningspy.generators.finviz.constants import (
     CUSTOM_TABLE_ALL_FIELDS_NEW,    
     CUSTOM_TABLE_FIELDS_ON_URL,
     TICKER_KEY,
+    VALID_SCOPES_EARNING_SCOPES
 )
 from earningspy.generators.finviz.utils import finviz_data_preprocessor
 
@@ -30,7 +31,6 @@ def _get_screener_data(filters=None, order='marketcap', query=None):
         query = FINVIZ_URL.format(filters, CUSTOM_TABLE_FIELDS_ON_URL, order)
 
     stock_list = Screener.init_from_url(query)
-    # stock_list = stock_list.get_ticker_details()
     data = pd.DataFrame(index=CUSTOM_TABLE_ALL_FIELDS_NEW)
     for stock in stock_list:
         ticker = stock.get(TICKER_KEY)
@@ -40,7 +40,26 @@ def _get_screener_data(filters=None, order='marketcap', query=None):
                 ticker_data.loc[key, ticker] = value
         data = pd.concat([data, ticker_data], axis=1)
     return finviz_data_preprocessor(data)
-    # return stock_list
+
+
+def get_by_earnings_date(scope):
+    if scope not in VALID_SCOPES_EARNING_SCOPES:
+        raise Exception(f"Invalid scope. Use {VALID_SCOPES_EARNING_SCOPES} instead")
+    
+    if scope == 'last_week':
+        filters = 'earningsdate_prevweek'
+    elif scope == 'this_week':
+        filters = 'earningsdate_thisweek'
+    elif scope == 'next_week':
+        filters = 'earningsdate_nextweek'
+    elif scope == 'today_bmo':
+        filters = 'earningsdate_todaybefore'
+    elif scope == 'yesterday_amc':
+        filters = 'earningsdate_yesterdayafter'
+    elif scope == 'today':
+        filters = 'earningsdate_today'
+
+    return _get_screener_data(filters)
 
 
 def get_by_tickers(tickers, order='marketcap'):

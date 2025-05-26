@@ -5,13 +5,13 @@ from earningspy.generators.finviz.constants import (
     PERCENTAJE_COLUMNS,
     MONEY_COLUMNS,
     NUMERIC_COLUMNS,
+    FINVIZ_DROP_COLUMNS
 )
 
 FINVIZ_URL = "https://finviz.com/screener.ashx?v=152&f={}{}&o={}"
 
 
 def _process_money_value(value):
-    print("processing value : {}".format(value))
     if isinstance(value, np.float64):
         return value
     if type(value) == float:
@@ -36,6 +36,7 @@ def _process_money_value(value):
         else:
             return value
 
+
 def _format_percent(percent):
     if isinstance(percent, str):
         if percent == '-':
@@ -51,6 +52,7 @@ def _format_percent(percent):
     
     return percent / 100
 
+
 def _convert_percent_columns(data): 
 
     for col in PERCENTAJE_COLUMNS:
@@ -60,6 +62,7 @@ def _convert_percent_columns(data):
             print('Unable to transform this column: {} - {} - {}'.format(col, e, e.__class__))
     return data
 
+
 def _process_money_columns(df):
 
     for col in MONEY_COLUMNS:
@@ -67,6 +70,7 @@ def _process_money_columns(df):
             df.loc[col] = df.loc[col].apply(_process_money_value)
         
     return df
+
 
 def _process_52_high(value):
 
@@ -80,6 +84,7 @@ def _process_52_high(value):
             return float(high_low[1])
     return np.nan
 
+
 def _process_52_low(value):
     if isinstance(value, float):
         return value
@@ -89,7 +94,8 @@ def _process_52_low(value):
     elif high_low[0] != '-':
         return float(high_low[0])
     return np.nan
-    
+
+
 def _process_52_high_low(data, drop=False):
     
     col_name = '52W Range'
@@ -106,6 +112,7 @@ def _process_52_high_low(data, drop=False):
         data.drop(col_name, inplace=True)
         
     return data
+
 
 def _calculate_normalized_52w(row):
     """Calculates the normalized indicator for price within a 52-week range."""
@@ -129,6 +136,7 @@ def _calculate_normalized_52w(row):
     else:
         return np.round(normalized_indicator, 4)
 
+
 def _process_ltdebt_eq(row):
 
     if isinstance(row['LTDebt/Eq'], float):
@@ -146,6 +154,7 @@ def _process_ltdebt_eq(row):
     
     return value
 
+
 def _process_dividend(row, row_name):
     
     if isinstance(row[row_name], float):
@@ -161,6 +170,7 @@ def _process_dividend(row, row_name):
 
     return dividend_yield
 
+
 def _process_index(row, index): 
 
     if isinstance(row['Index'], int):
@@ -171,21 +181,24 @@ def _process_index(row, index):
 
     return 0
 
+
 def _process_earnings_time(row, time):
 
     if isinstance(row['Earnings'], int):
         return row['Earnings']
-    earnings_time = row['Earnings'].split(' ')
+    earnings_time = row['Earnings'].split('/')
     if earnings_time == ['-']:
         return np.nan
     try:
-        earnings_time = earnings_time[2]
+        earnings_time = earnings_time[1]
     except IndexError:
         return np.nan
     else:
         if earnings_time == time:
             return 1
-    return 0
+        else:
+            return 0
+
 
 def _process_ex_dividend(row):
 
@@ -197,7 +210,7 @@ def _process_ex_dividend(row):
     if value.strip() == '-':
         return np.nan
     try:
-        date = pd.to_datetime(value, format='%b %d, %Y').date()
+        date = pd.to_datetime(value, format="%m/%d/%Y").date()
     except:
         return np.nan
     else:
@@ -236,33 +249,27 @@ def _process_volume(value):
 
 def _process_numeric_columns(data):
     for col in NUMERIC_COLUMNS:
-        print('Processing column: {}'.format(col))
         try:
             data.loc[col] = data.loc[col].apply(_process_volume)
         except Exception as e:
             print('Unable to transform this column: {} - {}'.format(col, e))
+            data.loc[col] = np.nan
     return data
 
 
-def _parse_earnings_time(value):
-        
-    if value == '-':
-        return np.nan
+def _process_report_date(row): 
+    value = row['Earnings']
+    date_list = value.split('/')
+    if len(date_list) == 1 and type(date_list[0]) == str and date_list[0] != '-':
+        date = date_list[0] + f" {datetime.datetime.now().year}"
+        date = pd.to_datetime(date, format='%b %d %Y')
+    elif len(date_list) == 2:
+        date = date_list[0].split(' ')
+        date = date_list[0] + f" {datetime.datetime.now().year}"
+        date = pd.to_datetime(date, format='%b %d %Y')
     else:
-        value = value.split()
-        if len(value) == 3:
-            return value[2]
-    return np.nan
-
-
-def _process_report_date(data): 
-    
-    column_name = 'Earnings'
-    new_column_name = 'Earnings Time'
-    if column_name in data.index:
-        data.loc[new_column_name] = data.loc[column_name].apply(_parse_earnings_time)
-    
-    return data
+        date = np.nan
+    return date
 
 
 def _process_remaning_columns(data):
@@ -276,16 +283,18 @@ def _process_remaning_columns(data):
     data.loc[:,'IS_S&P500'] = data.apply(lambda row: _process_index(row, index='S&P500'), axis=1)
     data.loc[:,'IS_RUSSELL'] = data.apply(lambda row: _process_index(row, index='RUT'), axis=1)
     data.loc[:,'IS_NASDAQ'] = data.apply(lambda row: _process_index(row, index='NDX'), axis=1)
+    data.loc[:,'IS_DOW_JONES'] = data.apply(lambda row: _process_index(row, index='DJIA'), axis=1)
 
-    data.loc[:,'IS_AMC'] = data.apply(lambda row: _process_earnings_time(row, time='AMC'), axis=1)
-    data.loc[:,'IS_BMO'] = data.apply(lambda row: _process_earnings_time(row, time='BMO'), axis=1)
+    data.loc[:,'IS_AMC'] = data.apply(lambda row: _process_earnings_time(row, time='a'), axis=1)
+    data.loc[:,'IS_BMO'] = data.apply(lambda row: _process_earnings_time(row, time='b'), axis=1)
 
-    data.loc[:,'DIVIDEND_EX-DATE'] = data.apply(lambda row: _process_ex_dividend(row), axis=1)
+    data.loc[:,'Dividend Ex Date'] = data.apply(lambda row: _process_ex_dividend(row), axis=1)
 
-    data.loc[:,'IS_OPTIONABLE'] = data.apply(lambda row: _process_yes_columns(row, col_name='Optionable'), axis=1)
-    data.loc[:,'IS_SHORTABLE'] = data.apply(lambda row: _process_yes_columns(row, col_name='Shortable'), axis=1)
+    data.loc[:,'Optionable'] = data.apply(lambda row: _process_yes_columns(row, col_name='Optionable'), axis=1)
+    data.loc[:,'Shortable'] = data.apply(lambda row: _process_yes_columns(row, col_name='Shortable'), axis=1)
 
     data.loc[:,'IS_USA'] = data.apply(lambda row: _process_country(row), axis=1)
+    data.loc[:,'EARNINGS_DATE'] = data.apply(lambda row: _process_report_date(row), axis=1)
 
     return data.T
 
@@ -296,7 +305,9 @@ def finviz_data_preprocessor(df):
     df = _process_money_columns(df)
     df = _process_numeric_columns(df)
     df = _process_52_high_low(df)
-    df = _process_report_date(df)
     df = _process_remaning_columns(df)
+    df = df.drop(FINVIZ_DROP_COLUMNS, axis=0, errors='ignore')
 
-    return df
+    df = df.infer_objects()
+
+    return df.T
