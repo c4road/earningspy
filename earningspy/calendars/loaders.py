@@ -1,7 +1,8 @@
 import pandas as pd
 from earningspy.generators.alphavantage.calendar import EarningsCalendar
 from earningspy.common.constants import (
-    EARNINGS_DATE_KEY,
+    FINVIZ_EARNINGS_DATE_KEY,
+    ALPHAVANTAGE_EARNINGS_DATE_KEY,
     TICKER_KEY_CAPITAL,
     DAYS_TO_EARNINGS_KEY_CAPITAL,
     DEFAULT_DAYS_PRE_EARNINGS,
@@ -19,8 +20,8 @@ class CalendarLoader:
     @staticmethod
     def _update_days_left(data):
         data = data.reset_index(drop=True)
-        data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
-        data[DAYS_TO_EARNINGS_KEY_CAPITAL] = data[EARNINGS_DATE_KEY].apply(EarningsCalendar._compute_days_left)
+        data[ALPHAVANTAGE_EARNINGS_DATE_KEY] = pd.to_datetime(data[ALPHAVANTAGE_EARNINGS_DATE_KEY])
+        data[DAYS_TO_EARNINGS_KEY_CAPITAL] = data[ALPHAVANTAGE_EARNINGS_DATE_KEY].apply(EarningsCalendar._compute_days_left)
         return data
 
     @classmethod
@@ -28,7 +29,7 @@ class CalendarLoader:
 
         keep_first = pd.read_csv(config.PRE_EARNINGS_DATA_PATH)
         keep_first = cls._update_days_left(keep_first)
-        keep_first = keep_first.set_index([EARNINGS_DATE_KEY])
+        keep_first = keep_first.set_index(['reportDate'])
         keep_first = keep_first.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL)
         keep_first.drop(['index', 'level_0'], axis=1, inplace=True, errors='ignore')
 
@@ -65,10 +66,10 @@ class CalendarLoader:
             merged_data = merged_data.reset_index()
         except Exception:
             pass
-        merged_data = merged_data.drop_duplicates([EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep=keep)
+        merged_data = merged_data.drop_duplicates([ALPHAVANTAGE_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep=keep)
         merged_data = self._update_days_left(merged_data)
         merged_data = merged_data.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL)
-        merged_data = merged_data.set_index([EARNINGS_DATE_KEY])
+        merged_data = merged_data.set_index([ALPHAVANTAGE_EARNINGS_DATE_KEY])
         merged_data = merged_data.drop(['index', 'level_0'], axis=1, errors='ignore')
         merged_data.to_csv(path)
         return merged_data 
@@ -76,7 +77,7 @@ class CalendarLoader:
     def _load_raw_data(self, data):
         data = data.reset_index()
         data = self._update_days_left(data)
-        data = data.set_index([EARNINGS_DATE_KEY])
+        data = data.set_index([ALPHAVANTAGE_EARNINGS_DATE_KEY])
         return data
 
     def update_pre_earnings(self, days=DEFAULT_DAYS_PRE_EARNINGS):

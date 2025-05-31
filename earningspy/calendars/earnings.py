@@ -1,5 +1,4 @@
 import pandas as pd
-from datetime import datetime
 from earningspy.generators.finviz.data import (
     get_filters,
     get_by_industry,
@@ -40,8 +39,8 @@ class EarningSpy:
                                      index=index)
 
         finviz_data = cls._arrange(finviz_data)
-        if future_only:
-            finviz_data = finviz_data[finviz_data[DAYS_LEFT_KEY] >= 0]
+        # if future_only:
+        #     finviz_data = finviz_data[finviz_data[DAYS_LEFT_KEY] >= 0]
         return finviz_data
 
     @classmethod
@@ -104,9 +103,19 @@ class EarningSpy:
         finviz_data = factory[cap]()
 
         return cls._arrange(finviz_data)
+    
+    @classmethod
+    def _check_missing_dates(cls, finviz_data):
+        missing_count = finviz_data.index.to_series().apply(
+            lambda row: isinstance(row, pd._libs.tslibs.nattype.NaTType) or pd.isna(row) or row is None
+        ).sum()
+        if missing_count > 0:
+            print(f"[WARNING] Found {missing_count} missing earnings dates in the data.")
 
     @classmethod
     def _compute_days_left(cls, finviz_data):
+        
+        cls._check_missing_dates(finviz_data)
         finviz_data.loc[:, DAYS_LEFT_KEY] = finviz_data.apply(lambda row: days_left(row), axis=1)
         return finviz_data
 
