@@ -137,40 +137,6 @@ def _calculate_normalized_52w(row):
         return np.round(normalized_indicator, 4)
 
 
-def _process_ltdebt_eq(row):
-
-    if isinstance(row['LTDebt/Eq'], float):
-        return row['LTDebt/Eq']
-    
-    if isinstance(row['LTDebt/Eq'], str):
-        if row['LTDebt/Eq'].strip() == '-':
-            return np.nan
-        try:
-            value = float(row['LTDebt/Eq'])
-        except:
-            value = np.nan
-    else:
-        value = np.nan
-    
-    return value
-
-
-def _process_dividend(row, row_name):
-    
-    if isinstance(row[row_name], float):
-        return row[row_name]
-    dividend_yield = np.nan
-    value = row[row_name].strip()
-    if value == '-':
-        return dividend_yield
-    else:
-        value = value.split(' ')
-        if len(value[1]) > 1:
-            dividend_yield = np.round(float(value[1].strip('(').strip(')').replace('%', '')) / 100, 4)
-
-    return dividend_yield
-
-
 def _process_index(row, index): 
 
     if isinstance(row['Index'], int):
@@ -276,9 +242,6 @@ def _process_remaning_columns(data):
 
     data = data.T
     data.loc[:,'52W_NORM'] = data.apply(lambda row: _calculate_normalized_52w(row), axis=1)
-    data.loc[:,'LTDEBT/EQ'] = data.apply(lambda row: _process_ltdebt_eq(row), axis=1)
-
-    data.loc[:,'DIVIDEND_YIELD_TTM'] = data.apply(lambda row: _process_dividend(row, row_name='Dividend'), axis=1)
 
     data.loc[:,'IS_S&P500'] = data.apply(lambda row: _process_index(row, index='S&P500'), axis=1)
     data.loc[:,'IS_RUSSELL'] = data.apply(lambda row: _process_index(row, index='RUT'), axis=1)
@@ -295,6 +258,8 @@ def _process_remaning_columns(data):
 
     data.loc[:,'IS_USA'] = data.apply(lambda row: _process_country(row), axis=1)
     data.loc[:,'EARNINGS_DATE'] = data.apply(lambda row: _process_report_date(row), axis=1)
+
+    data.loc[:, 'DATADATE'] = pd.to_datetime(datetime.datetime.now().date())
 
     return data.T
 
