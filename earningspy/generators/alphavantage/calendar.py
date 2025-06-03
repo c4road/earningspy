@@ -1,8 +1,8 @@
 import pandas as pd
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
+
 from earningspy.common.constants import (
-    EARNINGS_DATE_KEY,
+    ALPHAVANTAGE_EARNINGS_DATE_KEY,
     DAYS_TO_EARNINGS_KEY,
     SYMBOL_KEY
 )
@@ -74,7 +74,7 @@ class EarningsCalendar:
             merged = merged.reset_index()
         except Exception:
             pass
-        merged = merged.drop_duplicates([EARNINGS_DATE_KEY, SYMBOL_KEY], keep='last')
+        merged = merged.drop_duplicates([ALPHAVANTAGE_EARNINGS_DATE_KEY, SYMBOL_KEY], keep='last')
         merged = cls._prepare_dataframe(merged)
         try:
             cls._store_earnings_calendar(merged)
@@ -111,8 +111,8 @@ class EarningsCalendar:
 
     @classmethod
     def _prepare_dataframe(cls, data):
-        data[EARNINGS_DATE_KEY] = pd.to_datetime(data[EARNINGS_DATE_KEY])
-        data[DAYS_TO_EARNINGS_KEY] = data[EARNINGS_DATE_KEY].apply(cls._compute_days_left)
-        data = data.set_index(EARNINGS_DATE_KEY, drop=True)
+        data[ALPHAVANTAGE_EARNINGS_DATE_KEY] = pd.to_datetime(data[ALPHAVANTAGE_EARNINGS_DATE_KEY])
+        data[DAYS_TO_EARNINGS_KEY] = data[ALPHAVANTAGE_EARNINGS_DATE_KEY].apply(cls._compute_days_left)
+        data = data.set_index(ALPHAVANTAGE_EARNINGS_DATE_KEY, drop=True)
         data = data.sort_index()
         return data

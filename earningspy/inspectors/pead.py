@@ -327,13 +327,13 @@ class PEADInspector:
     
     def find_and_remove_duplicates(self):
         self.new_training_data = self.new_training_data.reset_index()
-        self.new_training_data = self.new_training_data.set_index(['reportDate', TICKER_KEY_CAPITAL])
+        self.new_training_data = self.new_training_data.set_index(['EARNINGS_DATE', TICKER_KEY_CAPITAL])
         self.new_training_data = self.new_training_data[~self.new_training_data.index.duplicated(keep='first')]
 
         self.find_and_remove_report_date_conflicts()
 
         self.new_training_data = self.new_training_data.reset_index()
-        self.new_training_data = self.new_training_data.set_index('reportDate')
+        self.new_training_data = self.new_training_data.set_index('EARNINGS_DATE')
     
         return self.new_training_data
 
@@ -367,14 +367,6 @@ class PEADInspector:
         # Delete trained records from the calendar
         self.remaining_data = self._calendar[~((self._calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < 0) & 
                                               (self._calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -DEFAULT_IF_ALPHA_WINDOW))]
-        if self.remaining_data.empty:
-            print('Unprocesed data is empty')
-        else:
-            try:
-                print("Storing remaining data")
-                self.remaining_data.to_csv(pre_earning_data_path)
-            except: 
-                print("Unable to store remaining data") 
 
         if not overwrite and not new_training_data_path:
             raise Exception("store_path can't be empty if overwrite=False")
@@ -382,6 +374,15 @@ class PEADInspector:
         data_saved = self.store_training_data(old_training_data_path, 
                                               new_training_data_path, 
                                               overwrite=overwrite)
+        if self.remaining_data.empty:
+            print('Unprocesed data is empty')
+        else:
+            try:
+                print("Storing remaining data")
+                self.remaining_data.to_csv(pre_earning_data_path)
+            except: 
+                print("Unable to store remaining data")
+
         return data_saved
 
     def plot_anomaly(self, direction, scope):
@@ -434,7 +435,7 @@ class PEADInspector:
             return
         old_data = pd.read_csv(old_data_path, index_col=0)
         old_data.index = pd.to_datetime(old_data.index)
-        assert len(old_data.columns) == len(self.new_training_data.columns), "Different length of columns"
+        assert len(old_data.columns) == len(self.new_training_data.columns), f"Different length of columns old={len(old_data.columns)} new={len(self.new_training_data.columns)}"
         self.merged_data = pd.concat([old_data, self.new_training_data], join='outer').drop_duplicates()
         try:
             self.merged_data.to_csv(store_path)
