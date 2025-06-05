@@ -1,0 +1,21 @@
+name: S3 ETL Workflow
+
+on:
+  workflow_dispatch:   
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::923699018646:role/EarningspyDataBucketRole
+          aws-region: us-east-1
+
+      - name: Verify Role Access
+        run: aws s3 ls
