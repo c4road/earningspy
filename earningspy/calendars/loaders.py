@@ -2,7 +2,6 @@ import pandas as pd
 from earningspy.generators.alphavantage.calendar import EarningsCalendar
 from earningspy.common.constants import (
     FINVIZ_EARNINGS_DATE_KEY,
-    ALPHAVANTAGE_EARNINGS_DATE_KEY,
     TICKER_KEY_CAPITAL,
     DAYS_TO_EARNINGS_KEY_CAPITAL,
     DEFAULT_DAYS_PRE_EARNINGS,

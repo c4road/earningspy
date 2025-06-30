@@ -10,42 +10,24 @@ from earningspy.generators.yahoo.async_timeseries import get_portfolio
 
 from earningspy.common.constants import (
     FINVIZ_EARNINGS_DATE_KEY,
-    RANGES,
     DAYS_TO_EARNINGS_KEY_CAPITAL,
-    DEFAULT_IF_ALPHA_WINDOW,
     TICKER_KEY_CAPITAL,
     COMPANY_KEY_CAPITAL,
     MARKET_DATA_TICKERS,
     TBILL_10_YEAR,
-    RET1_3KEY,
-    RET1_30KEY,
-    RET1_60KEY,
-    EXP_RET_3,
-    EXP_RET_30,
-    EXP_RET_60,
+    ABS_RET_KEY,
+    EXP_RET_KEY,
     SP_500_TICKER,
     BETA_KEY,
-    RF1_3KEY,
-    RF1_30KEY,
-    RF1_60KEY,
-    MARK_EXP_3_KEY,
-    MARK_EXP_30_KEY,
-    MARK_EXP_60_KEY,
-    CAPM_3_KEY,
-    CAPM_30_KEY,
-    CAPM_60_KEY,
+    RF_KEY,
+    MARK_EXP_KEY,
+    CAPM_KEY,
     TBILL_10_YEAR,
     VIX_TICKER,
-    VIX_1_3KEY,
-    VIX_1_30KEY,
-    VIX_1_60KEY,
+    VIX_KEY,
     EARNING_VIX_KEY,
-    CAR_3_KEY,
-    CAR_30_KEY,
-    CAR_60_KEY,
-    BHAR_3_KEY,
-    BHAR_30_KEY,
-    BHAR_60_KEY,
+    CAR_KEY,
+    BHAR_KEY,
     DATADATE_KEY,
 )
 
@@ -54,21 +36,14 @@ class PEADInspector:
 
     def __init__(self, 
                  calendar=None,
-                 training_data=None,
                  price_history=None):
 
         self._calendar = calendar
         self.price_history = self.load_price_history(price_history)
-        self.new_training_data = training_data
         self.remaining_data = None
         self.old_training_data = None
         self.merged_training_data = None
-
-        if self.new_training_data:
-            raise Exception('Target data is already set')
-    
-        self.new_training_data = self._calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < 0) &
-                                                (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -DEFAULT_IF_ALPHA_WINDOW)]
+        self.new_training_data = None
 
     @property
     def calendar(self):
@@ -103,7 +78,8 @@ class PEADInspector:
         return self.price_history
 
     def get_window_pct_change(self, row, days):
-        earnings_date = row.name
+        earnings_date = row.name[0]
+        ticker = row.name[1]
         initial_date = (earnings_date - BDay(1)).date()
         end_date = (earnings_date + BDay(days)).date()
 
@@ -114,16 +90,17 @@ class PEADInspector:
 
         ts_slice = self.price_history.loc[initial_date:end_date]
         try:
-            value = ts_slice[row[TICKER_KEY_CAPITAL]].pct_change(len(ts_slice) - 1, fill_method=None).iloc[-1]
+            value = ts_slice[ticker].pct_change(len(ts_slice) - 1, fill_method=None).iloc[-1]
         except KeyError as e:
-            print(f"Ticker {row[TICKER_KEY_CAPITAL]} is not in timeseries data")
+            print(f"Ticker {ticker} is not in timeseries data")
             value = np.nan
 
         return np.round(value, 4)
 
     def get_risk_free_rate(self, row, days):
 
-        date = str(row.name.date())
+        date = str(row.name[0].date())
+
         if date not in self.price_history.index:
             date = self.price_history.index[
                 self.price_history.index.get_indexer([date], method="nearest")[0]]
@@ -135,109 +112,97 @@ class PEADInspector:
 
         return np.round(rf, 4)
 
-    def get_windows_abnormal_return(self):
+    def get_windows_abnormal_return(self, days, affected_rows):
 
-        self.new_training_data.loc[:, RET1_3KEY] = self.new_training_data.apply(
-            lambda row: self.get_window_pct_change(row, days=RANGES[0][1]), axis=1)
-        self.new_training_data.loc[:, RET1_30KEY] = self.new_training_data.apply(
-            lambda row: self.get_window_pct_change(row, days=RANGES[1][1]), axis=1)
-        self.new_training_data.loc[:, RET1_60KEY] = self.new_training_data.apply(
-            lambda row: self.get_window_pct_change(row, days=RANGES[2][1]), axis=1)
+        label = ABS_RET_KEY.format(days)
+
+        self.new_training_data[label] = 0.0
+        self.new_training_data.loc[affected_rows.index, label] = affected_rows.apply(
+            lambda row: self.get_window_pct_change(row, days=days), axis=1)
 
         return self.new_training_data
 
     def get_capm(self, row, days=0):
-        if days == 3:
-            rf = row[RF1_3KEY]
-            R = row[EXP_RET_3]
-            b = row[BETA_KEY]
 
-        elif days == 30:
-            rf = row[RF1_30KEY]
-            R = row[EXP_RET_30]
-            b = row[BETA_KEY]
-
-        elif days == 60:
-            rf = row[RF1_60KEY]
-            R = row[EXP_RET_60]
-            b = row[BETA_KEY]
+        rf_label = RF_KEY.format(days)
+        R_label = EXP_RET_KEY.format(days)
+        
+        rf = row[rf_label]
+        R = row[R_label]
+        b = row[BETA_KEY]
 
         capm = rf + b * (R - rf)
         return np.round(capm, 4)
 
-    def get_expected_return(self,row, days):
+    def get_expected_return(self, row, days):
 
+        date = row.name[0]
+        ticker = row.name[1]
         try:
             if days == 3:
-                exp_ret = self.price_history[row[TICKER_KEY_CAPITAL]].loc[:row.name].pct_change(days, fill_method=None).mean()
+                exp_ret = self.price_history[ticker].loc[:date].pct_change(days, fill_method=None).mean()
             elif days == 30:
-                exp_ret = self.price_history[row[TICKER_KEY_CAPITAL]].loc[:row.name].resample('M').ffill().pct_change().mean()
+                exp_ret = self.price_history[ticker].loc[:date].resample('M').ffill().pct_change().mean()
             elif days == 60:
-                exp_ret = self.price_history[row[TICKER_KEY_CAPITAL]].loc[:row.name].resample('2M').ffill().pct_change().mean()
+                exp_ret = self.price_history[ticker].loc[:date].resample('2M').ffill().pct_change().mean()
         except KeyError:
             exp_ret = np.nan
 
         return np.round(exp_ret, 4)
     
     def get_market_expected_return(self, row, days):
+
+        date = row.name[0]
         try:
             if days == 3:
-                exp_ret = self.price_history[SP_500_TICKER].loc[:row.name].pct_change(days, fill_method=None).mean()
+                exp_ret = self.price_history[SP_500_TICKER].loc[:date].pct_change(days, fill_method=None).mean()
             elif days == 30:
-                exp_ret = self.price_history[SP_500_TICKER].loc[:row.name].resample('1M').ffill().pct_change().mean()
+                exp_ret = self.price_history[SP_500_TICKER].loc[:date].resample('1M').ffill().pct_change().mean()
             elif days == 60:
-                exp_ret = self.price_history[SP_500_TICKER].loc[:row.name].resample('2M').ffill().pct_change().mean()
+                exp_ret = self.price_history[SP_500_TICKER].loc[:date].resample('2M').ffill().pct_change().mean()
         except KeyError:
             exp_ret = np.nan
 
         return np.round(exp_ret, 4)
     
-    def get_windows_market_expected_return(self):
-        self.new_training_data.loc[:, MARK_EXP_3_KEY] = self.new_training_data.apply(
-            lambda row: self.get_market_expected_return(row, days=3), axis=1)
-        self.new_training_data.loc[:, MARK_EXP_30_KEY] = self.new_training_data.apply(
-            lambda row: self.get_market_expected_return(row, days=30), axis=1)
-        self.new_training_data.loc[:, MARK_EXP_60_KEY] = self.new_training_data.apply(
-            lambda row: self.get_market_expected_return(row, days=60), axis=1)
+    def get_windows_market_expected_return(self, days, affected_rows):
         
+        label = MARK_EXP_KEY.format(days)
+        self.new_training_data[label] = 0.0
+        self.new_training_data.loc[affected_rows.index, label] = self.new_training_data.apply(
+            lambda row: self.get_market_expected_return(row, days=days), axis=1)
+
         return self.new_training_data
     
-    def get_windows_capm(self):
+    def get_windows_capm(self, days, affected_rows):
 
-        self.new_training_data.loc[:, CAPM_3_KEY] = self.new_training_data.apply(
-            lambda row: self.get_capm(row, days=3), axis=1)
-        self.new_training_data.loc[:, CAPM_30_KEY] = self.new_training_data.apply(
-            lambda row: self.get_capm(row, days=30), axis=1)
-        self.new_training_data.loc[:, CAPM_60_KEY] = self.new_training_data.apply(
-            lambda row: self.get_capm(row, days=60), axis=1)
+        label = CAPM_KEY.format(days)
+        self.new_training_data[label] = 0.0
+        self.new_training_data.loc[affected_rows.index, label] = self.new_training_data.apply(
+            lambda row: self.get_capm(row, days=days), axis=1)
 
         return self.new_training_data
 
-    def get_windows_expected_return(self):
+    def get_windows_expected_return(self, days, affected_rows):
 
-        self.new_training_data.loc[:, EXP_RET_3] = self.new_training_data.apply(
-            lambda row: self.get_expected_return(row, days=3), axis=1)
-        self.new_training_data.loc[:, EXP_RET_30] = self.new_training_data.apply(
-            lambda row: self.get_expected_return(row, days=30), axis=1)
-        self.new_training_data.loc[:, EXP_RET_60] = self.new_training_data.apply(
-            lambda row: self.get_expected_return(row, days=60), axis=1)
+        label = EXP_RET_KEY.format(days)
+        self.new_training_data[label] = 0.0
+        self.new_training_data.loc[affected_rows.index, label] = affected_rows.apply(
+            lambda row: self.get_expected_return(row, days=days), axis=1)
 
         return self.new_training_data
 
-    def get_windows_risk_free_rate(self):
-
-        self.new_training_data.loc[:, RF1_3KEY] = self.new_training_data.apply(
-            lambda row: self.get_risk_free_rate(row, days=RANGES[0][1]), axis=1)
-        self.new_training_data.loc[:, RF1_30KEY] = self.new_training_data.apply(
-            lambda row: self.get_risk_free_rate(row, days=RANGES[1][1]), axis=1)
-        self.new_training_data.loc[:, RF1_60KEY] = self.new_training_data.apply(
-            lambda row: self.get_risk_free_rate(row, days=RANGES[2][1]), axis=1)
+    def get_windows_risk_free_rate(self, days, affected_rows):
+        label = RF_KEY.format(days)
+        self.new_training_data[label] = 0.0
+        self.new_training_data.loc[affected_rows.index, label] = affected_rows.apply(
+            lambda row: self.get_risk_free_rate(row, days=days), axis=1)
         
         return self.new_training_data
     
     def get_risk_free_rate(self, row, days):
 
-        date = str(row.name.date())
+        date = str(row.name[0].date())
         if date not in self.price_history.index:
             date = self.price_history.index[
                 self.price_history.index.get_indexer([date], method="nearest")[0]]
@@ -264,7 +229,7 @@ class PEADInspector:
         return initial_date, end_date
     
     def get_vix(self, row, days=0):
-        earnings_date = row.name
+        earnings_date = row.name[0]
         initial_date = (earnings_date - BDay(1)).date()
         end_date = (earnings_date + BDay(days)).date()
 
@@ -282,20 +247,22 @@ class PEADInspector:
 
         return np.round(value, 2)
     
-    def get_windows_vix(self):
-        self.new_training_data.loc[:, VIX_1_3KEY] = self.new_training_data.apply(
-            lambda row: self.get_vix(row, days=RANGES[0][1]), axis=1)
-        self.new_training_data.loc[:, VIX_1_30KEY] = self.new_training_data.apply(
-            lambda row: self.get_vix(row, days=RANGES[1][1]), axis=1)
-        self.new_training_data.loc[:, VIX_1_60KEY] = self.new_training_data.apply(
-            lambda row: self.get_vix(row, days=RANGES[2][1]), axis=1)
+    def get_windows_vix(self, days, affected_rows):
+
+        label = VIX_KEY.format(days)
+        self.new_training_data[label] = 0.0
+        self.new_training_data.loc[affected_rows.index, label] = self.new_training_data.apply(
+            lambda row: self.get_vix(row, days=days), axis=1)
+
         return self.new_training_data
     
     def get_vix_for_date(self, row):
+        earnings_date = row.name[0]
+        ticker = row.name[1]
         if row['IS_BMO'] == 1:
-            earnings_date = row.name
+            earnings_date = earnings_date
         else:
-            earnings_date = (row.name + BDay(1)).date()
+            earnings_date = (earnings_date + BDay(1)).date()
     
         if earnings_date not in self.price_history.index:
             earnings_date = self.price_history.index[self.price_history.index.get_indexer([earnings_date], method="nearest")[0]]
@@ -303,26 +270,32 @@ class PEADInspector:
         try:
             value = self.price_history.loc[earnings_date][VIX_TICKER]
         except KeyError as e:
-            print(f"VIX value not present for {row[TICKER_KEY_CAPITAL]} is not in timeseries data")
+            print(f"VIX value not present for {ticker} is not in timeseries data")
             value = np.nan
 
         return np.round(value, 2)
 
-    def get_earnings_vix(self):
-        self.new_training_data.loc[:, EARNING_VIX_KEY] = self.new_training_data.apply(
+    def get_earnings_vix(self, affected_rows):
+
+        self.new_training_data[EARNING_VIX_KEY] = 0.0
+        self.new_training_data.loc[affected_rows.index, EARNING_VIX_KEY] = self.new_training_data.apply(
             lambda row: self.get_vix_for_date(row), axis=1)
         return self.new_training_data
 
-    def get_windows_car(self):
-        self.new_training_data[CAR_3_KEY] = (self.new_training_data[RET1_3KEY] - self.new_training_data[CAPM_3_KEY]).round(4)
-        self.new_training_data[CAR_30_KEY] = (self.new_training_data[RET1_30KEY] - self.new_training_data[CAPM_30_KEY]).round(4)
-        self.new_training_data[CAR_60_KEY] = (self.new_training_data[RET1_60KEY] - self.new_training_data[CAPM_60_KEY]).round(4)
+    def get_windows_car(self, days, affected_rows):
+        label = CAR_KEY.format(days)
+        ret_label = ABS_RET_KEY.format(days)
+        capm_label = CAPM_KEY.format(days)
+        self.new_training_data[label] = 0.0
+        self.new_training_data.loc[affected_rows.index, label] = (self.new_training_data[ret_label] - self.new_training_data[capm_label]).round(4)
         return self.new_training_data
     
-    def get_windows_bhar(self):
-        self.new_training_data[BHAR_3_KEY] = (self.new_training_data[RET1_3KEY] - self.new_training_data[MARK_EXP_3_KEY]).round(4)
-        self.new_training_data[BHAR_30_KEY] = (self.new_training_data[RET1_30KEY] - self.new_training_data[MARK_EXP_30_KEY]).round(4)
-        self.new_training_data[BHAR_60_KEY] = (self.new_training_data[RET1_60KEY] - self.new_training_data[MARK_EXP_60_KEY]).round(4)
+    def get_windows_bhar(self, days, affected_rows):
+        label = BHAR_KEY.format(days)
+        ret_label = ABS_RET_KEY.format(days)
+        benchmark_label = MARK_EXP_KEY.format(days)
+        self.new_training_data[label] = 0.0
+        self.new_training_data.loc[affected_rows.index, label] = (self.new_training_data[ret_label] - self.new_training_data[benchmark_label]).round(4)
         return self.new_training_data
 
     def _get_anomaly(self, value, anomaly_threshold=0.1):
@@ -335,23 +308,41 @@ class PEADInspector:
             return 0
 
     def prepare(self, dry_run=False):
-
+        
+        """
+        This method assumes you are passing pre-earning data on the constructor
+        """
+        
+        self.new_training_data = self._calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -3)]
         if dry_run:
             return self.new_training_data
 
         if self.price_history is None or self.price_history.empty:
+            print("timeseries not found loading...")
             self.price_history = self.get_price_history()
 
+        return self.new_training_data
+
+    def inspect(self, days=3):
+
+        if days not in [3, 30, 60]:
+            raise Exception('Invalid day range. Select from {3, 30, 60}')
+    
+        self.new_training_data = self.new_training_data.reset_index()
+        self.new_training_data = self.new_training_data.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
+        affected_rows = self.new_training_data[self.new_training_data[DAYS_TO_EARNINGS_KEY_CAPITAL] < -days]
+
         self.new_training_data = self.new_training_data.copy()
-        self.get_windows_abnormal_return()
-        self.get_windows_risk_free_rate()
-        self.get_windows_expected_return()
-        self.get_windows_market_expected_return()
-        self.get_windows_capm()
-        self.get_windows_car()
-        self.get_windows_bhar()
-        self.get_windows_vix()
-        self.get_earnings_vix()
+
+        self.get_windows_abnormal_return(days=days, affected_rows=affected_rows)
+        self.get_windows_risk_free_rate(days=days, affected_rows=affected_rows)
+        self.get_windows_expected_return(days=days, affected_rows=affected_rows)
+        self.get_windows_market_expected_return(days=days, affected_rows=affected_rows)
+        self.get_windows_capm(days=days, affected_rows=affected_rows)
+        self.get_windows_car(days=days, affected_rows=affected_rows)
+        self.get_windows_bhar(days=days, affected_rows=affected_rows)
+        self.get_windows_vix(days=days, affected_rows=affected_rows)
+        self.get_earnings_vix(affected_rows)
         self.find_and_remove_duplicates()
 
         return self.new_training_data
@@ -370,7 +361,7 @@ class PEADInspector:
 
     def find_and_remove_report_date_conflicts(self):
         report_date_conflicts = self.find_report_date_conflicts()
-        return self.new_training_data.drop(report_date_conflicts)
+        self.new_training_data = self.new_training_data.drop(report_date_conflicts)
 
     def find_report_date_conflicts(self):
         items_to_remove = []
@@ -389,6 +380,7 @@ class PEADInspector:
         pre_earning_data_path, 
         old_training_data_path, 
         new_training_data_path,
+        days,
         overwrite=False
     ):
         """
@@ -397,7 +389,7 @@ class PEADInspector:
         """
         # Delete trained records from the calendar
         self.remaining_data = self._calendar[~((self._calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < 0) & 
-                                              (self._calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -DEFAULT_IF_ALPHA_WINDOW))]
+                                              (self._calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -days))]
 
         if not overwrite and not new_training_data_path:
             raise Exception("store_path can't be empty if overwrite=False")
@@ -447,7 +439,7 @@ class PEADInspector:
             ax = fig.add_subplot(gs[counter])
             ax.tick_params(axis='x', rotation=45, labelsize=13)
             ax.axvline(pd.to_datetime(index), color='r', linestyle='--', lw=2)
-            ax.set_title(f"{row[COMPANY_KEY_CAPITAL]} - {row[TICKER_KEY_CAPITAL]} {row[RET1_3KEY] * 100:.3g}% (3d Pct change)", fontsize=18)
+            ax.set_title(f"{row[COMPANY_KEY_CAPITAL]} - {row[TICKER_KEY_CAPITAL]} {row[ABS_RET_KEY] * 100:.3g}% (3d Pct change)", fontsize=18)
             ax.set_ylabel("Price", fontsize=18)
             fig.tight_layout()
             ax.plot(price_range.index.to_numpy(), price_range.to_numpy())
