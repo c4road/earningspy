@@ -19,183 +19,196 @@ from earningspy.common.constants import (
 from earningspy.calendars.utils import days_left
 from earningspy.inspectors.mixins import CARMixin, TimeSeriesMixin
 
+
 class PEADInspector(CARMixin, TimeSeriesMixin):
+    """
+    Calendar should be passed using this method
+    pd.read_csv('<field-name>.csv', index_col=0, parse_dates=True)
+    """
 
     def __init__(self, 
                  calendar=None,
                  price_history=None):
 
         self.calendar = self._load_calendar(calendar)
-        self.new_training_data = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -3)]
+        self.backup = self.calendar.copy()
+        self.price_history = self._load_price_history(price_history)
 
-        self.price_history = self._load_price_history(price_history=price_history, 
-                                                      assets=set(self.new_training_data[TICKER_KEY_CAPITAL].to_list()))
         self.remaining_data = self.calendar[~(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -3)]
         self.merged_data = None
 
 
     def _load_calendar(self, calendar):
 
-        calendar.loc[:, DAYS_TO_EARNINGS_KEY_CAPITAL] = calendar.apply(lambda row: days_left(row), axis=1)
-        calendar.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=True)
+        calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] = calendar.apply(lambda row: days_left(row), axis=1)
+        calendar = calendar.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
+
         return calendar
 
 
-    def inspect(self, days=3, dry_run=False):
+    def inspect(self, days=3, dry_run=False, reuse_timeseries=False):
 
         if days not in ALLOWED_WINDOWS:
             raise Exception(f'Invalid day range. Select from {ALLOWED_WINDOWS}')
-    
-        self.new_training_data = self.new_training_data.reset_index()
-        self.new_training_data = self.new_training_data.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
-        affected_rows = self.new_training_data[self.new_training_data[DAYS_TO_EARNINGS_KEY_CAPITAL] < -days]
 
+        self.affected_rows = self._get_affected_rows(days)
         if dry_run:
-            return affected_rows
-        
-        self.new_training_data = self.new_training_data.copy()
+            self.affected_rows = self.affected_rows.reset_index()
+            self.affected_rows = self.affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY])
+            return self.affected_rows
 
-        self._get_windows_abnormal_return(days=days, affected_rows=affected_rows)
-        self._get_windows_risk_free_rate(days=days, affected_rows=affected_rows)
-        self._get_windows_expected_return(days=days, affected_rows=affected_rows)
-        self._get_windows_market_expected_return(days=days, affected_rows=affected_rows)
-        self._get_windows_capm(days=days, affected_rows=affected_rows)
-        self._get_windows_car(days=days, affected_rows=affected_rows)
-        self._get_windows_bhar(days=days, affected_rows=affected_rows)
-        self._get_windows_vix(days=days, affected_rows=affected_rows)
-        self._get_earnings_vix(affected_rows)
+        self._process_windows_columns(days=days, reuse_timeseries=reuse_timeseries)
+        self._get_earnings_vix()
         self._find_and_remove_duplicates()
 
-        return self.new_training_data
+        return self
+    
+    def _process_windows_columns(self, days=3, reuse_timeseries=False):
+
+        if not reuse_timeseries:
+            self.price_history = self.fetch_price_history(assets=set(self.affected_rows.index.get_level_values(1).to_list()))
+        self.calendar = self.calendar.reset_index()
+        self.calendar = self.calendar.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
+
+        self._get_windows_abnormal_return(days=days)
+        self._get_windows_risk_free_rate(days=days)
+        self._get_windows_expected_return(days=days)
+        self._get_windows_market_expected_return(days=days)
+        self._get_windows_capm(days=days)
+        self._get_windows_car(days=days)
+        self._get_windows_bhar(days=days)
+        self._get_windows_vix(days=days)
 
 
-    def join(self, old_training_data):
+    def _get_affected_rows(self, days):
+        if days == 3:
+            affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -3) &
+                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -90)]
+            affected_rows = affected_rows[affected_rows[ABS_RET_KEY.format(days)].isna()]
+        elif days == 30:
+            affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -30) &
+                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -90)]
+            affected_rows = affected_rows[affected_rows[ABS_RET_KEY.format(days)].isna()]
+        elif days == 60:
+            affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -60) &
+                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -90)]
+            affected_rows = affected_rows[affected_rows[ABS_RET_KEY.format(days)].isna()]
+
+        affected_rows = affected_rows.reset_index()
+        affected_rows = affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
+        return affected_rows
+
+
+    def join(self, old_training_data, type_='post'):
 
         if old_training_data is None or old_training_data.empty:
             raise Exception("old_training_data can't be empty")
 
-        if self.new_training_data.empty:
-            print("new data is empty nothing to concat")
+        if type_ == 'post' and self.calendar.empty:
+            print("new post data is empty nothing to concat")
             return
 
+        if type_ == 'pre' and self.calendar.empty:
+            print("new pre data is empty nothing to concat")
+            return
 
-        self.merged_data = pd.concat([old_training_data, self.new_training_data], join='outer')
+        old_training_data = old_training_data.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
+        old_training_data[DAYS_TO_EARNINGS_KEY_CAPITAL] = old_training_data.apply(lambda row: days_left(row), axis=1)
+        if type_ == 'post':
+            self.merged_data = pd.concat([self.calendar, old_training_data], join='outer')
+        if type_ == 'pre':
+            self.merged_data = pd.concat([self.calendar, old_training_data], join='outer')
         self.merged_data = self.merged_data.reset_index()
         self.merged_data = self.merged_data.drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep='first')
         self.merged_data = self.merged_data.set_index([FINVIZ_EARNINGS_DATE_KEY])
+
         return self.merged_data
 
 
-    def _get_windows_abnormal_return(self, days, affected_rows):
+    def _get_windows_abnormal_return(self, days):
 
         label = ABS_RET_KEY.format(days)
-
-        self.new_training_data[label] = 0.0
-        self.new_training_data.loc[affected_rows.index, label] = affected_rows.apply(
+    
+        self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_window_pct_change(row, days=days), axis=1)
 
-        return self.new_training_data
-
     
-    def _get_windows_market_expected_return(self, days, affected_rows):
+    def _get_windows_market_expected_return(self, days):
         
         label = MARK_EXP_KEY.format(days)
-        self.new_training_data[label] = 0.0
-        self.new_training_data.loc[affected_rows.index, label] = self.new_training_data.apply(
+        self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_market_expected_return(row, days=days), axis=1)
 
-        return self.new_training_data
 
-
-    def _get_windows_capm(self, days, affected_rows):
+    def _get_windows_capm(self, days):
 
         label = CAPM_KEY.format(days)
-        self.new_training_data[label] = 0.0
-        self.new_training_data.loc[affected_rows.index, label] = self.new_training_data.apply(
+        self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_capm(row, days=days), axis=1)
 
-        return self.new_training_data
 
-
-    def _get_windows_expected_return(self, days, affected_rows):
+    def _get_windows_expected_return(self, days):
 
         label = EXP_RET_KEY.format(days)
-        self.new_training_data[label] = 0.0
-        self.new_training_data.loc[affected_rows.index, label] = affected_rows.apply(
+        self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_expected_return(row, days=days), axis=1)
 
-        return self.new_training_data
 
-
-    def _get_windows_risk_free_rate(self, days, affected_rows):
+    def _get_windows_risk_free_rate(self, days):
         label = RF_KEY.format(days)
-        self.new_training_data[label] = 0.0
-        self.new_training_data.loc[affected_rows.index, label] = affected_rows.apply(
+        self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_risk_free_rate(row, days=days), axis=1)
-        
-        return self.new_training_data
 
     
-    def _get_windows_vix(self, days, affected_rows):
+    def _get_windows_vix(self, days):
 
         label = VIX_KEY.format(days)
-        self.new_training_data[label] = 0.0
-        self.new_training_data.loc[affected_rows.index, label] = self.new_training_data.apply(
+        self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_vix(row, days=days), axis=1)
 
-        return self.new_training_data
 
+    def _get_earnings_vix(self):
 
-    def _get_earnings_vix(self, affected_rows):
-
-        self.new_training_data[EARNING_VIX_KEY] = 0.0
-        self.new_training_data.loc[affected_rows.index, EARNING_VIX_KEY] = self.new_training_data.apply(
+        self.calendar.loc[self.affected_rows.index, EARNING_VIX_KEY] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_vix_for_date(row), axis=1)
-        return self.new_training_data
 
 
-    def _get_windows_car(self, days, affected_rows):
+    def _get_windows_car(self, days):
         label = CAR_KEY.format(days)
         ret_label = ABS_RET_KEY.format(days)
         capm_label = CAPM_KEY.format(days)
-        self.new_training_data[label] = 0.0
-        self.new_training_data.loc[affected_rows.index, label] = (self.new_training_data[ret_label] - self.new_training_data[capm_label]).round(4)
-        return self.new_training_data
+        self.calendar.loc[self.affected_rows.index, label] = (self.calendar[ret_label] - self.calendar[capm_label]).round(4)
 
 
-    def _get_windows_bhar(self, days, affected_rows):
+    def _get_windows_bhar(self, days):
         label = BHAR_KEY.format(days)
         ret_label = ABS_RET_KEY.format(days)
         benchmark_label = MARK_EXP_KEY.format(days)
-        self.new_training_data[label] = 0.0
-        self.new_training_data.loc[affected_rows.index, label] = (self.new_training_data[ret_label] - self.new_training_data[benchmark_label]).round(4)
-        return self.new_training_data
+        self.calendar.loc[self.affected_rows.index, label] = (self.calendar[ret_label] - self.calendar[benchmark_label]).round(4)
 
 
     def _find_and_remove_duplicates(self):
-        self.new_training_data = self.new_training_data.reset_index()
-        self.new_training_data = self.new_training_data.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
-        self.new_training_data = self.new_training_data[~self.new_training_data.index.duplicated(keep='first')]
+        self.calendar = self.calendar.reset_index()
+        self.calendar = self.calendar.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
+        self.calendar = self.calendar[~self.calendar.index.duplicated(keep='first')]
 
         self._find_and_remove_report_date_conflicts()
 
-        self.new_training_data = self.new_training_data.reset_index()
-        self.new_training_data = self.new_training_data.set_index(FINVIZ_EARNINGS_DATE_KEY)
-    
-        return self.new_training_data
+        self.calendar = self.calendar.reset_index()
+        self.calendar = self.calendar.set_index(FINVIZ_EARNINGS_DATE_KEY)
 
 
     def _find_and_remove_report_date_conflicts(self):
         report_date_conflicts = self._find_report_date_conflicts()
-        self.new_training_data = self.new_training_data.drop(report_date_conflicts)
+        self.calendar = self.calendar.drop(report_date_conflicts)
 
 
     def _find_report_date_conflicts(self):
         items_to_remove = []
-        for ticker in self.new_training_data.index.get_level_values(1).unique():
+        for ticker in self.calendar.index.get_level_values(1).unique():
             for quarter in range(1, 5):
-                item = self.new_training_data.loc[(self.new_training_data.index.get_level_values(1) == ticker) & 
-                                                  (self.new_training_data.index.get_level_values(0).quarter == quarter)]  \
+                item = self.calendar.loc[(self.calendar.index.get_level_values(1) == ticker) & 
+                                                  (self.calendar.index.get_level_values(0).quarter == quarter)]  \
                                                   .sort_values(by=DATADATE_KEY, ascending=False)
                 for i in range(1, len(item)):
                     items_to_remove.append(item.index[i])

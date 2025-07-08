@@ -19,7 +19,6 @@ from earningspy.common.constants import (
     DAYS_LEFT_KEY,
     ALLOWED_CAPITALIZATIONS,
     DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT,
-
 )
 
 config = Config()
@@ -80,10 +79,17 @@ class EarningSpy:
         data = get_by_earnings_date(scope="next_week")
         return cls._arrange(data)
 
+    @classmethod
+    def get_this_month_earnings(cls):
+        data = get_by_earnings_date(scope="this_month")
+        return cls._arrange(data)
+
+    @classmethod
     def get_today_bmo(cls):
         data = get_by_earnings_date(scope="today_bmo")
         return cls._arrange(data)
 
+    @classmethod
     def get_yesterday_amc(cls):
         data = get_by_earnings_date(scope="yesterday_amc")
         return cls._arrange(data)
@@ -93,7 +99,7 @@ class EarningSpy:
 
         if cap not in ALLOWED_CAPITALIZATIONS:
             raise Exception(f"Invalid scope valid scopes {ALLOWED_CAPITALIZATIONS}")
-        
+
         factory = {
             'micro': get_micro_caps,
             'small': get_small_caps,
@@ -103,7 +109,7 @@ class EarningSpy:
         finviz_data = factory[cap]()
 
         return cls._arrange(finviz_data)
-    
+
     @classmethod
     def _check_missing_dates(cls, finviz_data):
         missing_count = finviz_data.index.to_series().apply(
@@ -116,7 +122,7 @@ class EarningSpy:
     def _compute_days_left(cls, finviz_data):
         
         cls._check_missing_dates(finviz_data)
-        finviz_data.loc[:, DAYS_LEFT_KEY] = finviz_data.apply(lambda row: days_left(row), axis=1)
+        finviz_data[DAYS_LEFT_KEY] = finviz_data.apply(lambda row: days_left(row), axis=1)
         return finviz_data
 
     @classmethod

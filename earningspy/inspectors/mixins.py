@@ -34,7 +34,6 @@ class CARMixin:
         except KeyError as e:
             print(f"Ticker {ticker} is not in timeseries data")
             value = np.nan
-
         return np.round(value, 4)
 
 
@@ -56,9 +55,9 @@ class CARMixin:
 
     def get_capm(self, row, days=0):
 
-        rf_label = RF_KEY.format(days)
-        R_label = EXP_RET_KEY.format(days)
-        
+        rf_label = RF_KEY.format(days).strip()
+        R_label = EXP_RET_KEY.format(days).strip()
+
         rf = row[rf_label]
         R = row[R_label]
         b = row[BETA_KEY]
@@ -111,7 +110,6 @@ class CARMixin:
         if math.isnan(rf):
             rf = self.price_history[TBILL_10_YEAR].mean()
         rf = (rf / 100) * (days / 251)
-
         return np.round(rf, 4)
 
 
@@ -153,20 +151,20 @@ class CARMixin:
             value = np.nan
 
         return np.round(value, 2)
-    
+
+
 class TimeSeriesMixin:
 
     def _load_price_history(self, price_history, assets=None):
 
         if price_history is None or price_history.empty:
-            print("timeseries not found loading...")
-            price_history = self.fetch_price_history(assets=assets)
-        else:
-            print("timeseries found")
-            price_history.index = pd.to_datetime(price_history.index, errors='coerce')
-            price_history = price_history[~price_history.index.isna()]
-            price_history = price_history[~price_history.index.duplicated(keep='first')]        
-            price_history = price_history.sort_index()
+            return None
+        
+        print("timeseries found")
+        price_history.index = pd.to_datetime(price_history.index, errors='coerce')
+        price_history = price_history[~price_history.index.isna()]
+        price_history = price_history[~price_history.index.duplicated(keep='first')]        
+        price_history = price_history.sort_index()
     
         return price_history
 
