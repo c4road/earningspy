@@ -84,7 +84,7 @@ FIELDS_ORDER = [
 'SHORT_INTEREST',
 'ROA',
 'ROE',
-'ROI',
+'ROIC',
 'CURR_R',
 'QUICK_R',
 'LTDEBT/EQ',

@@ -83,7 +83,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
     def _get_affected_rows(self, days):
         if days == 3:
             affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -3) &
-                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -90)]
+                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -30)]
             affected_rows = affected_rows[affected_rows[ABS_RET_KEY.format(days)].isna()]
         elif days == 30:
             affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -30) &
@@ -91,7 +91,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
             affected_rows = affected_rows[affected_rows[ABS_RET_KEY.format(days)].isna()]
         elif days == 60:
             affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -60) &
-                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -90)]
+                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -70)]
             affected_rows = affected_rows[affected_rows[ABS_RET_KEY.format(days)].isna()]
 
         affected_rows = affected_rows.reset_index()
