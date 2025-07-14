@@ -67,6 +67,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
 
         if not reuse_timeseries:
             self.price_history = self.fetch_price_history(assets=set(self.affected_rows.index.get_level_values(1).to_list()))
+
         self.calendar = self.calendar.reset_index()
         self.calendar = self.calendar.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
 
@@ -99,10 +100,10 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return affected_rows
 
 
-    def join(self, old_training_data, type_='post'):
+    def join(self, storage, type_='post'):
 
-        if old_training_data is None or old_training_data.empty:
-            raise Exception("old_training_data can't be empty")
+        if storage is None or storage.empty:
+            raise Exception("storage can't be empty")
 
         if type_ == 'post' and self.calendar.empty:
             print("new post data is empty nothing to concat")
@@ -112,12 +113,12 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
             print("new pre data is empty nothing to concat")
             return
 
-        old_training_data = old_training_data.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
-        old_training_data[DAYS_TO_EARNINGS_KEY_CAPITAL] = old_training_data.apply(lambda row: days_left(row), axis=1)
+        storage = storage.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
+        storage[DAYS_TO_EARNINGS_KEY_CAPITAL] = storage.apply(lambda row: days_left(row), axis=1)
         if type_ == 'post':
-            self.merged_data = pd.concat([self.calendar, old_training_data], join='outer')
+            self.merged_data = pd.concat([self.calendar, storage], join='outer')
         if type_ == 'pre':
-            self.merged_data = pd.concat([self.calendar, old_training_data], join='outer')
+            self.merged_data = pd.concat([self.calendar, storage], join='outer')
         self.merged_data = self.merged_data.reset_index()
         self.merged_data = self.merged_data.drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep='first')
         self.merged_data = self.merged_data.set_index([FINVIZ_EARNINGS_DATE_KEY])
@@ -208,8 +209,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         for ticker in self.calendar.index.get_level_values(1).unique():
             for quarter in range(1, 5):
                 item = self.calendar.loc[(self.calendar.index.get_level_values(1) == ticker) & 
-                                                  (self.calendar.index.get_level_values(0).quarter == quarter)]  \
-                                                  .sort_values(by=DATADATE_KEY, ascending=False)
+                                         (self.calendar.index.get_level_values(0).quarter == quarter)]
                 for i in range(1, len(item)):
                     items_to_remove.append(item.index[i])
                     print(f"Found duplicate for {item.index[0][1]} on {quarter} quarter")
