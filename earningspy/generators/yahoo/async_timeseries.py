@@ -99,7 +99,8 @@ async def get_portfolio_async(assets, from_='3m', start_date=None, end_date=dt.n
     portfolio = portfolio.set_index('Date')
     portfolio.index = pd.to_datetime(portfolio.index)
     portfolio = portfolio.round(3)
-    print(f"Not found assets: {len(set(not_found))}, {set(not_found)}")
+    if len(not_found):
+        print(f"Not found assets: {len(set(not_found))}, {set(not_found)}")
     return portfolio
 
 def prepare_data(data, ticker):

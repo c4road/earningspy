@@ -58,6 +58,8 @@ def get_by_earnings_date(scope):
         filters = 'earningsdate_yesterdayafter'
     elif scope == 'today':
         filters = 'earningsdate_today'
+    elif scope == 'this_month':
+        filters = 'earningsdate_thismonth'
 
     return _get_screener_data(filters)
 
