@@ -65,7 +65,7 @@ async def get_one_ticker_async(session, asset, from_='3m', start_date=None, end_
                 df.index = df.index.normalize()
                 return asset, df.round(2)
             else:
-                print(f"Could not retrieve data for {asset}: {response.status}")
+                # print(f"Could not retrieve data for {asset}: {response.status}")
                 return asset, None
     except Exception as e:
         print(f"Error fetching data for {asset}: {str(e)}")

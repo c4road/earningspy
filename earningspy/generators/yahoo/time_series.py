@@ -95,7 +95,6 @@ def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date())
         return data.round(2)
     else:
         err = Exception(f'Could not retrieve data for {asset}:{response.text}')
-        print(str(err))
         return None
 
     

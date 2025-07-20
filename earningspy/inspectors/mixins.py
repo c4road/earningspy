@@ -70,6 +70,7 @@ class CARMixin:
 
         date = row.name[0]
         ticker = row.name[1]
+
         try:
             if days == 3:
                 exp_ret = self.price_history[ticker].loc[:date].pct_change(days, fill_method=None).mean()
@@ -78,6 +79,7 @@ class CARMixin:
             elif days == 60:
                 exp_ret = self.price_history[ticker].loc[:date].resample('2M').ffill().pct_change().mean()
         except KeyError:
+            print(f'KeyError for days {days}, ticker {ticker}, date {date}')
             exp_ret = np.nan
 
         return np.round(exp_ret, 4)
