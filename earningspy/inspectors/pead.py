@@ -13,8 +13,8 @@ from earningspy.common.constants import (
     EARNING_VIX_KEY,
     CAR_KEY,
     BHAR_KEY,
-    DATADATE_KEY,
     ALLOWED_WINDOWS,
+    AVAILABLE_CHECK_COLUMNS,
 )
 from earningspy.calendars.utils import days_left
 from earningspy.inspectors.mixins import CARMixin, TimeSeriesMixin
@@ -62,7 +62,28 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self._find_and_remove_duplicates()
 
         return self
-    
+
+    def refresh(self, days=3, dry_run=False, reuse_timeseries=False, check_column=None, deep=False):
+
+        if days not in ALLOWED_WINDOWS:
+            raise Exception(f'Invalid day range. Select from {ALLOWED_WINDOWS}')
+
+        if not check_column or check_column not in AVAILABLE_CHECK_COLUMNS:
+            raise Exception(f"Provide a column to check for NaNs to do the refresh, must be from this list {AVAILABLE_CHECK_COLUMNS}")
+        
+        self.affected_rows = self._get_affected_rows(days, check_column=check_column, deep=deep)
+        if dry_run:
+            self.affected_rows = self.affected_rows.reset_index()
+            self.affected_rows = self.affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY])
+            return self.affected_rows
+        
+        self._process_windows_columns(days=days, reuse_timeseries=reuse_timeseries)
+        self._get_earnings_vix()
+        self._find_and_remove_duplicates()
+
+        return self
+        
+
     def _process_windows_columns(self, days=3, reuse_timeseries=False):
 
         if not reuse_timeseries:
@@ -81,20 +102,18 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self._get_windows_vix(days=days)
 
 
-    def _get_affected_rows(self, days):
-        if days == 3:
-            affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -3) &
-                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -30)]
-            affected_rows = affected_rows[affected_rows[ABS_RET_KEY.format(days)].isna()]
-        elif days == 30:
-            affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -30) &
-                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -90)]
-            affected_rows = affected_rows[affected_rows[ABS_RET_KEY.format(days)].isna()]
-        elif days == 60:
-            affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -60) &
-                                            (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -70)]
-            affected_rows = affected_rows[affected_rows[ABS_RET_KEY.format(days)].isna()]
+    def _get_affected_rows(self, days, check_column=ABS_RET_KEY, deep=False):
 
+        start = days
+        end = days + 30
+
+        if deep:
+            affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -start)]
+        else:
+            affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -start) &
+                                          (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -end)]
+
+        affected_rows = affected_rows[affected_rows[check_column.format(days)].isna()]
         affected_rows = affected_rows.reset_index()
         affected_rows = affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
         return affected_rows
@@ -212,5 +231,6 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
                                          (self.calendar.index.get_level_values(0).quarter == quarter)]
                 for i in range(1, len(item)):
                     items_to_remove.append(item.index[i])
-                    print(f"Found duplicate for {item.index[0][1]} on {quarter} quarter")
+
+        print(f"items to remove {items_to_remove}")
         return items_to_remove
