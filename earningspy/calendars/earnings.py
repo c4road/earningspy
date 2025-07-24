@@ -11,18 +11,12 @@ from earningspy.generators.finviz.data import (
     get_by_earnings_date,
 )
 
-from earningspy.config import Config
 from earningspy.calendars.utils import calendar_pre_formatter, days_left
-from earningspy.generators.alphavantage.calendar import EarningsCalendar
 from earningspy.common.constants import (  
     FINVIZ_EARNINGS_DATE_KEY,
     DAYS_LEFT_KEY,
     ALLOWED_CAPITALIZATIONS,
-    DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT,
 )
-
-config = Config()
-
 
 class EarningSpy:
 
@@ -38,8 +32,8 @@ class EarningSpy:
                                      index=index)
 
         finviz_data = cls._arrange(finviz_data)
-        # if future_only:
-        #     finviz_data = finviz_data[finviz_data[DAYS_LEFT_KEY] >= 0]
+        if future_only:
+            finviz_data = finviz_data[finviz_data[DAYS_LEFT_KEY] >= 0]
         return finviz_data
 
     @classmethod
@@ -131,18 +125,3 @@ class EarningSpy:
         data = data.sort_index(ascending=True)
         data = cls._compute_days_left(data)
         return calendar_pre_formatter(data)
-
-    @classmethod
-    def get_earning_date_for_missings(cls, 
-                                 symbols,
-                                 web=False):
-
-        data = EarningsCalendar.get_or_create_earnings_calendar(update=True, web=web)
-        results = data[data['symbol'].isin(symbols)]
-
-        # only dates from this trimester, 15 days margin of error
-        results = results[(results[DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT] < 90) & 
-                          (results[DAYS_TO_EARNINGS_KEY_BEFORE_FORMAT] > 0)]
-
-
-        return results.sort_index()
