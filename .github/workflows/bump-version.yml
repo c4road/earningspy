@@ -26,7 +26,7 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@v0.8.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_TOKEN }}
       
             - name: Set up build dependencies
         run: pip install setuptools wheel twine
@@ -37,5 +37,5 @@ jobs:
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: twine upload dist/*
