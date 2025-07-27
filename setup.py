@@ -1,42 +1,35 @@
-import sys 
-from distutils.core import setup
-from setuptools import find_packages
+from earningspy.__version__ import __version__
+from setuptools import setup, find_packages
 import pathlib
-
-version = "0.1.0"
-if "--version" in sys.argv:
-    index = sys.argv.index("--version")
-    version = sys.argv[index + 1]
-    sys.argv.pop(index)
-    sys.argv.pop(index)
-
 
 with pathlib.Path("requirements.txt").open() as requirements_file:
     install_requires = [
-        line.strip() for line in requirements_file if (
-            line.strip() and not line.startswith("#") and not line.startswith("--"))
+        line.strip() for line in requirements_file
+        if line.strip() and not line.startswith("#") and not line.startswith("--")
     ]
-        
+
+with open("README.md", "r", encoding="utf-8") as f:
+    long_description = f.read()
 
 setup(
     name="earningspy",
-    packages=find_packages(),
-    version=version,
+    version=__version__,
     license="MIT",
-    description="Like if you can predict earnigns using AI",
+    description="Python toolkit for PEAD research and earnings calendar analysis.",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     author="Alberto Rincones",
     author_email="alberto.rincones@code4road.com",
     url="https://github.com/c4road/earningspy",
-    download_url="https://earningspy-923699018646.d.codeartifact.us-east-1.amazonaws.com/pypi/EarningSpy/earningspy",
-    keywords=["earnings", "finance", "AI", "finviz", "scraper"],
+    keywords=["earnings", "finance", "AI", "scraper", "PEAD", "quant"],
     install_requires=install_requires,
+    python_requires="==3.10.*",
+    packages=find_packages(exclude=["tests", "docs"]),
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Information Technology",
-        "License :: Other/Proprietary License",
-        "Topic :: Scientific/Engineering :: Data Analysis"
-        "Programming Language :: Python :: 3.10"
+        "License :: OSI Approved :: MIT License",
+        "Topic :: Scientific/Engineering :: Data Analysis",
+        "Programming Language :: Python :: 3.10",
     ],
-    package_data={'': ['earningspy/local_data/from-Feb2023EarningsCalendar.csv']},
-    include_package_data=True,
 )

@@ -1,0 +1,64 @@
+name: Bump Version and Upload Wheel
+
+on:
+  push:
+    branches:
+      - main
+      - readme-and-cleaning
+  workflow_dispatch:
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install bump2version
+        run: pip install bump2version
+
+      - name: Bump version (patch)
+        run: bump2version patch --allow-dirty
+
+      - name: Push changes
+        uses: ad-m/github-push-action@v0.8.0
+        with:
+          github_token: ${{ secrets.GH_TOKEN }}
+
+  upload-wheel:
+    runs-on: ubuntu-latest
+    needs: bump-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up build dependencies
+        run: pip install setuptools wheel twine
+
+      - name: Build wheel
+        run: python setup.py bdist_wheel
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: twine upload dist/*
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: bump-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

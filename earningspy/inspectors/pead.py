@@ -179,7 +179,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_risk_free_rate(row, days=days), axis=1)
 
-    
+
     def _get_windows_vix(self, days):
 
         label = VIX_KEY.format(days)
@@ -212,25 +212,20 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self.calendar = self.calendar.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
         self.calendar = self.calendar[~self.calendar.index.duplicated(keep='first')]
 
-        self._find_and_remove_report_date_conflicts()
+        self._remove_duplicate_ticker_quarters()
 
         self.calendar = self.calendar.reset_index()
         self.calendar = self.calendar.set_index(FINVIZ_EARNINGS_DATE_KEY)
 
 
-    def _find_and_remove_report_date_conflicts(self):
-        report_date_conflicts = self._find_report_date_conflicts()
-        self.calendar = self.calendar.drop(report_date_conflicts)
-
-
-    def _find_report_date_conflicts(self):
-        items_to_remove = []
-        for ticker in self.calendar.index.get_level_values(1).unique():
-            for quarter in range(1, 5):
-                item = self.calendar.loc[(self.calendar.index.get_level_values(1) == ticker) & 
-                                         (self.calendar.index.get_level_values(0).quarter == quarter)]
-                for i in range(1, len(item)):
-                    items_to_remove.append(item.index[i])
-
-        print(f"items to remove {items_to_remove}")
-        return items_to_remove
+    def _remove_duplicate_ticker_quarters(self):
+        self.calendar = self.calendar.reset_index()
+        self.calendar['year'] = self.calendar[FINVIZ_EARNINGS_DATE_KEY].dt.year
+        self.calendar['quarter'] = self.calendar[FINVIZ_EARNINGS_DATE_KEY].dt.quarter
+        self.calendar = self.calendar.sort_values(FINVIZ_EARNINGS_DATE_KEY)
+        original_len = len(self.calendar)
+        self.calendar = self.calendar.drop_duplicates(subset=[TICKER_KEY_CAPITAL, 'year', 'quarter'], keep='last')
+        num_duplicates = original_len - len(self.calendar)
+        print(f"Found and removed {num_duplicates} duplicate ticker-quarter entries.")
+        self.calendar = self.calendar.drop(columns=['year', 'quarter'])
+        self.calendar = self.calendar.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
