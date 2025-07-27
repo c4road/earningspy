@@ -6,7 +6,6 @@ on:
 jobs:
   upload-wheel:
     runs-on: ubuntu-latest
-    needs: bump-version
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -21,7 +20,7 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: twine upload dist/*
+        run: twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
   
   create-release:
     runs-on: ubuntu-latest

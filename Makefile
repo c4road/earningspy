@@ -44,45 +44,12 @@ tox-test: ## run tests on every Python version with tox
 	tox
 
 twine-upload: dist ## package and upload a release
-	twine upload dist/*
+	twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
 
 
 build-package: clean ## builds source and wheel package
 	@echo "Building version $(VERSION)"
 	VERSION=$(VERSION) python setup.py bdist_wheel
 	# python setup.py sdist
-	python setup.py bdist_wheel --version $(VERSION)
+	python setup.py bdist_wheel
 	ls -l dist
-
-aws-token:  ## fetch aws codeartifact token
-	aws codeartifact get-authorization-token --domain earningspy --domain-owner 923699018646 --query authorizationToken
-
-aws-assume:  ## assume project role to execute aws cli commands on resources
-	export AWS_VAULT=
-	aws-vault exec earningspy
-
-aws-login:  ## enable pip to use codeartifact repo, no need to fetch token first. make changes in pip.conf
-	aws codeartifact login --tool pip --repository EarningSpy --domain earningspy --domain-owner 923699018646 --region us-east-1
-	cat ~/.config/pip/pip.conf
-
-aws-upload:  ## upload wheel to codeartifact repo
-	twine upload --repository codeartifact --verbose dist/$(WHEEL)
-
-aws-delete-package:
-	aws codeartifact delete-package-versions \
-		--domain earningspy \
-		--domain-owner 923699018646 \
-		--repository EarningSpy \
-		--format pypi \
-		--package earningspy \
-		--versions $(VERSION)
-
-aws-open-console:  ## open AWS console as project user (not root)
-	open https://923699018646.signin.aws.amazon.com/console
-
-aws-open-root-console:  ## open AWS console to login as root
-	open https://us-east-1.console.aws.amazon.com/console/home?nc2=h_ct&src=header-signin&region=us-east-1
-
-aws-get-repository:  ## Fetch codeartifact repo url
-	aws codeartifact get-repository-endpoint --domain earningspy --repository EarningSpy --format pypi
-
