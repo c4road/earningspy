@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "earningspy"
+version = "0.1.0"  # bump2version will manage this later
+description = "Python toolkit for PEAD research and earnings calendar analysis."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+  { name = "Alberto Rincones", email = "alberto.rincones@code4road.com" }
+]
+keywords = ["earnings", "finance", "AI", "scraper", "PEAD", "quant"]
+requires-python = "==3.10.*"
+
+# Dependencies are read from requirements.txt below (see dynamic = ["dependencies"])
+dynamic = ["dependencies"]
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11"
+]
+
+[project.urls]
+Homepage = "https://github.com/c4road/earningspy"
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "docs"]
+
+# Automatically load dependencies from requirements.txt
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
