@@ -29,7 +29,9 @@ setup(
         "Development Status :: 4 - Beta",
         "Intended Audience :: Information Technology",
         "License :: OSI Approved :: MIT License",
-        "Topic :: Scientific/Engineering :: Data Analysis",
+        "Topic :: Scientific/Engineering :: Information Analysis",
+        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
     ],
 )

@@ -3,8 +3,7 @@ name: Bump Version and Upload Wheel
 on:
   push:
     branches:
-      - main
-      - readme-and-cleaning
+      - master
   workflow_dispatch:
 
 jobs:
