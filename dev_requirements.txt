@@ -2,3 +2,4 @@ pip-tools
 pipdeptree
 pytest
 bump2version
+setuptools
