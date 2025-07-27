@@ -1,0 +1,42 @@
+name: Bump Version and Upload Wheel
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - 'earningspy/__version__.py'
+      - '.bumpversion.cfg'
+  workflow_dispatch:
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Set git user
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install bump2version
+        run: pip install bump2version
+
+      - name: Bump version (patch)
+        run: |
+          bump2version patch --allow-dirty --no-commit --no-tag
+          git status
+          git add .
+          git commit -m "Bump version [skip ci]"
+          git push origin master
