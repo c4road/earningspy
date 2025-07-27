@@ -1,4 +1,4 @@
-name: Bump Version and Upload Wheel
+name: Bump Version on Merge
 
 on:
   push:
@@ -35,8 +35,7 @@ jobs:
 
       - name: Bump version (patch)
         run: |
-          bump2version patch --allow-dirty --no-commit --no-tag
+          bump2version patch --allow-dirty --message "Bump version to {new_version} [skip ci]"
           git status
           git add .
-          git commit -m "Bump version [skip ci]"
-          git push origin master
+          git push origin master --tags
