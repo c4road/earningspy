@@ -3,11 +3,6 @@
 |----------|----------|----------|
 
 
-
-
-
-
-
 # EarningsPy 📈
 
 EarningsPy is the elegant Python alternative for studying Post Earnings Announcement Drift (PEAD) in financial markets. Designed for quant researchers, data scientists, and finance professionals, this package provides robust tools to analyze earnings calendars, automate data collection, and perform advanced event studies with ease.
@@ -30,4 +25,18 @@ EarningsPy is the elegant Python alternative for studying Post Earnings Announce
 
 ```bash
 pip install earningspy
+```
+
+## Usage (WIP)
+
+### Fetch next week earnings
+```python
+from earningspy.calendars.earnings import EarningSpy
+EarningSpy.get_next_week_earnings()
+```
+
+### Fetch earnings by ticker
+```python
+from earningspy.calendars.earnings import EarningSpy
+EarningSpy.get_by_tickers(['AAPL', 'MSFT', 'GOOGL'])
 ```
