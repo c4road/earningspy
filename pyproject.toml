@@ -12,7 +12,7 @@ authors = [
   { name = "Alberto Rincones", email = "alberto.rincones@code4road.com" }
 ]
 keywords = ["earnings", "finance", "AI", "scraper", "PEAD", "quant"]
-requires-python = "==3.10.*"
+requires-python = ">=3.9,<3.12"
 
 # Dependencies are read from requirements.txt below (see dynamic = ["dependencies"])
 dynamic = ["dependencies"]

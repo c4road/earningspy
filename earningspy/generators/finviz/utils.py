@@ -131,7 +131,7 @@ def _calculate_normalized_52w(row):
         range_width = high_52w - low_52w
         normalized_indicator = (row['Price'] - midpoint) / (range_width / 2)
     except Exception as e:
-        print(f"Error processing 52W Range {row['52W Range']}: {e}")
+        print(f"Error processing 52W Range {range52}: {e}")
         return np.nan
     else:
         return np.round(normalized_indicator, 4)

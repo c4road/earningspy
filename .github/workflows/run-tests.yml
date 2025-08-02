@@ -1,0 +1,38 @@
+name: Run Tests
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches:
+      - master
+
+jobs:
+  tox:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+    name: Tox on Python ${{ matrix.python-version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install tox
+        run: python -m pip install --upgrade pip tox
+
+      - name: Run tox
+        run: tox -e py${{ matrix.python-version.replace('.', '') }}
+      
+      - name: Upload HTML coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: htmlcov-${{ matrix.python-version }}
+          path: htmlcov/

@@ -3,3 +3,4 @@ pipdeptree
 pytest
 bump2version
 setuptools
+pytest-cov
