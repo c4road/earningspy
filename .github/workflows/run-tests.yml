@@ -8,25 +8,26 @@ on:
       - master
 
 jobs:
-  tox:
+  test:
     runs-on: ubuntu-latest
     strategy:
+      max-parallel: 1
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
         include:
+          - python-version: "3.8"
+            tox-env: py38
           - python-version: "3.9"
             tox-env: py39
           - python-version: "3.10"
             tox-env: py310
           - python-version: "3.11"
             tox-env: py311
-    name: Tox on Python ${{ matrix.python-version }}
+    name: Tox Test - Python ${{ matrix.python-version }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -35,10 +36,23 @@ jobs:
 
       - name: Run tox
         run: tox -e ${{ matrix.tox-env }}
-      
-      - name: Upload HTML coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
+
+  build_and_inspect:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Build and Inspect
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
-          name: htmlcov-${{ matrix.python-version }}
-          path: htmlcov/
+          python-version: "3.11"  # your primary build Python
+
+      - name: Install tox
+        run: python -m pip install --upgrade pip tox
+
+      - name: Run build
+        run: tox -e build
+
+      - name: Run inspect
+        run: tox -e inspect

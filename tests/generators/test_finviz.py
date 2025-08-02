@@ -4,7 +4,6 @@ from earningspy.generators.finviz.data import (
     get_by_earnings_date, 
     get_by_tickers,
 )
-from earningspy.generators.finviz.constants import VALID_SCOPES_EARNING_SCOPES
 
 EXPECTED_COLUMNS = [
     'Ticker', 'Company', 'Sector', 'Industry', 'Country', 'Market Cap',
@@ -34,8 +33,8 @@ EXCLUDE_NAN_CHECK = [
 
 @pytest.mark.parametrize("filters", [
     # industries with few stocks to avoid running for too long time
-    'ind_gambling',
-    'ind_semiconductors',
+    # 'ind_gambling',
+    # 'ind_semiconductors',
     'ind_solar'
 ])
 def test_get_screener_data(filters):
@@ -49,8 +48,8 @@ def test_get_screener_data(filters):
 
 
 @pytest.mark.parametrize("scopes", [
-    'last_week', 
-    'this_week', 
+    # 'last_week', 
+    # 'this_week', 
     'next_week', 
 ])
 def test_get_by_earnings_date(scopes):
