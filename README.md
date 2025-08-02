@@ -1,8 +1,12 @@
-[![Run Tests](https://github.com/c4road/earningspy/actions/workflows/run-tests.yml/badge.svg)](https://github.com/c4road/earningspy/actions/workflows/run-tests.yml)
 
-[![Bump Version on Merge](https://github.com/c4road/earningspy/actions/workflows/bump-version.yml/badge.svg)](https://github.com/c4road/earningspy/actions/workflows/bump-version.yml)
+| [![Run Tests](https://github.com/c4road/earningspy/actions/workflows/run-tests.yml/badge.svg)](https://github.com/c4road/earningspy/actions/workflows/run-tests.yml) | [![Bump Version on Merge](https://github.com/c4road/earningspy/actions/workflows/bump-version.yml/badge.svg)](https://github.com/c4road/earningspy/actions/workflows/bump-version.yml) | [![Publish Wheel to PyPi](https://github.com/c4road/earningspy/actions/workflows/publish-wheel.yml/badge.svg)](https://github.com/c4road/earningspy/actions/workflows/publish-wheel.yml) |
+|----------|----------|----------|
 
-[![Publish Wheel to PyPi](https://github.com/c4road/earningspy/actions/workflows/publish-wheel.yml/badge.svg)](https://github.com/c4road/earningspy/actions/workflows/publish-wheel.yml)
+
+
+
+
+
 
 # EarningsPy 📈
 
