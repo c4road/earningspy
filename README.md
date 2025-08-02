@@ -1,5 +1,9 @@
 [![Run Tests](https://github.com/c4road/earningspy/actions/workflows/run-tests.yml/badge.svg)](https://github.com/c4road/earningspy/actions/workflows/run-tests.yml)
 
+[![Bump Version on Merge](https://github.com/c4road/earningspy/actions/workflows/bump-version.yml/badge.svg)](https://github.com/c4road/earningspy/actions/workflows/bump-version.yml)
+
+[![Publish Wheel to PyPi](https://github.com/c4road/earningspy/actions/workflows/publish-wheel.yml/badge.svg)](https://github.com/c4road/earningspy/actions/workflows/publish-wheel.yml)
+
 # EarningsPy 📈
 
 EarningsPy is the elegant Python alternative for studying Post Earnings Announcement Drift (PEAD) in financial markets. Designed for quant researchers, data scientists, and finance professionals, this package provides robust tools to analyze earnings calendars, automate data collection, and perform advanced event studies with ease.
