@@ -1,0 +1,1 @@
+from earningspy.inspectors.pead import PEADInspector

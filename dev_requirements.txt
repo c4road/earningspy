@@ -1,5 +1,8 @@
+-r requirements.txt
 pip-tools
 pipdeptree
 pytest
 bump2version
 setuptools
+pytest-cov
+tox

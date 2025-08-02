@@ -158,6 +158,6 @@ def download_ticker_details(page_content: requests.Response, **kwargs):
                 data[row[column]] = row[column + 1]
 
     if len(data) == 0:
-        print(f"-> Unable to parse page for ticker: {ticker}")
+        raise Exception(f"No data found for ticker: {ticker}")
 
     return {ticker: [data, get_analyst_price_targets_for_export(ticker, page_parsed)]}

@@ -1,21 +1,14 @@
 import pandas as pd
 from earningspy.generators.finviz.data import (
+    get_by_earnings_date, 
+    get_by_tickers, 
     get_filters,
-    get_by_industry,
-    get_by_sector,
-    get_by_index,
-    get_by_industry,
-    get_micro_caps,
-    get_small_caps,
-    get_medium_caps,
-    get_by_earnings_date,
 )
 
 from earningspy.calendars.utils import calendar_pre_formatter, days_left
 from earningspy.common.constants import (  
     FINVIZ_EARNINGS_DATE_KEY,
     DAYS_LEFT_KEY,
-    ALLOWED_CAPITALIZATIONS,
 )
 
 class EarningSpy:
@@ -36,27 +29,6 @@ class EarningSpy:
             finviz_data = finviz_data[finviz_data[DAYS_LEFT_KEY] >= 0]
         return finviz_data
 
-    @classmethod
-    def get_finviz(cls,
-                   sector=None,
-                   industry=None,
-                   index=None):
-        
-        if industry and not index and not sector:
-            finviz_data = get_by_industry(industry)
-        elif sector and not index and not industry:
-            finviz_data = get_by_sector(sector)
-        elif index and not sector and not industry:
-            finviz_data = get_by_index(index)
-        else:
-            raise Exception('You can only pass sector, industry, or index not several of them')
-
-        return finviz_data
-
-    @classmethod
-    def get_finviz_get_by_industry(cls, tickers):
-        data = get_by_industry(tickers)
-        return cls._arrange(data)
 
     @classmethod
     def get_this_week_earnings(cls):
@@ -87,22 +59,17 @@ class EarningSpy:
     def get_yesterday_amc(cls):
         data = get_by_earnings_date(scope="yesterday_amc")
         return cls._arrange(data)
-
+    
     @classmethod
-    def get_by_capitalization(cls, cap='micro'):
-
-        if cap not in ALLOWED_CAPITALIZATIONS:
-            raise Exception(f"Invalid scope valid scopes {ALLOWED_CAPITALIZATIONS}")
-
-        factory = {
-            'micro': get_micro_caps,
-            'small': get_small_caps,
-            'medium': get_medium_caps, 
-        }
-
-        finviz_data = factory[cap]()
-
-        return cls._arrange(finviz_data)
+    def get_by_tickers(cls, tickers):
+        """
+        Get earnings data for a list of tickers.
+        """
+        if not isinstance(tickers, list):
+            raise ValueError("tickers must be a list of strings")
+        
+        data = get_by_tickers(tickers)
+        return cls._arrange(data)
 
     @classmethod
     def _check_missing_dates(cls, finviz_data):
