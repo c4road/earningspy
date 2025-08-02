@@ -16,10 +16,6 @@ EarningsPy is the elegant Python alternative for studying Post Earnings Announce
 - 🛠️ **Quant-Friendly API**: Pandas-based workflows for easy integration into quant research pipelines.
 - 📊 **Excel-Ready Data**: Generate profiled, ready-to-use datasets for calculations and modeling directly in Excel.
 
-## Requirements
-
-- Tested in Python 3.10 only
-
 
 ## Installation
 
