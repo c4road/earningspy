@@ -1,7 +1,7 @@
 import asyncio
 import aiohttp
 import random
-from time import sleep
+
 from datetime import datetime as dt
 from dateutil.relativedelta import relativedelta
 import pandas as pd
@@ -94,7 +94,7 @@ async def get_portfolio_async(assets, from_='3m', start_date=None, end_date=dt.n
                 portfolio = pd.concat([portfolio, close_data[asset]], axis=1)
             
             # Random sleep to avoid rate limiting
-            await asyncio.sleep(random.uniform(0.5, 2.0))
+            await asyncio.sleep(random.uniform(0.5, 1.0))
 
     portfolio = portfolio.set_index('Date')
     portfolio.index = pd.to_datetime(portfolio.index)

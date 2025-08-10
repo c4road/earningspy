@@ -38,8 +38,9 @@ multidict==6.6.3
     # via
     #   aiohttp
     #   yarl
-numpy==2.3.2
+numpy==2.3.2 ; python_version >= "3.11"
     # via
+    #   -r requirements.in
     #   contourpy
     #   pandas
 pandas==2.3.1
