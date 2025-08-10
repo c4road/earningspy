@@ -77,6 +77,8 @@ import nest_asyncio  # Only if ran on a notebook
 nest_asyncio.apply()
 
 # Get after earning data
+# Use .get_this_week_earnings() if the week has not ended
+# Use .get_previous_week_earnings() if the week already passed
 previous_week = EarningSpy.get_this_week_earnings()
 inspector = PEADInspector(
     calendar=previous_week
@@ -106,3 +108,58 @@ Then you can use the local storge with your preferable BI tool (PowerBI, Tableau
 
 This is useful to train models and perform statistical regressions, it could also be used to build dashboards and graphs but bear in mind that the data fetched using this approach will contain pre earning information. Meaning, the date will point to fundamentals 1 to 5 days before the earnings. For example, if you plot a timeseries over the EPS you will see the EPS previous to the one reported on that given date. 
 
+#### First time (create your local calendar file)
+
+```python
+from earningspy.calendars.earnings import EarningSpy
+from earningspy.inspectors.pead import PEADInspector
+import nest_asyncio  # Only if ran on a notebook
+nest_asyncio.apply()
+
+# Get before earning data
+# Use .get_next_week_earnings() because you are seeking before earnings information
+next_week = EarningSpy.get_next_week_earnings()
+inspector = PEADInspector(
+    calendar=previous_week
+)
+
+# nothing to inspect here because the earnings did not come yet
+inspector.calendar.to_csv('post_earnings.csv')
+```
+
+#### Second time (load local calendar and append new information) 
+
+```python
+from earningspy.calendars.earnings import EarningSpy
+from earningspy.inspectors.pead import PEADInspector
+import nest_asyncio  # Only if ran on a notebook
+nest_asyncio.apply()
+
+# Get before earning data
+previous_week = EarningSpy.get_next_week_earnings()
+inspector = PEADInspector(
+    calendar=previous_week
+)
+
+# load local storage
+storage = pd.read_csv('pre_earnings.csv', index_col=0, parse_dates=True)
+
+# join new calendar with local storage
+merged = pead.join(storage, type_='pre')
+
+# you can see the data that is going to be processed without processing it on a given days window
+inspector.inspect(days=3, dry_run=True)
+inspector.inspect(days=30, dry_run=True)
+inspector.inspect(days=60, dry_run=True)
+
+# you can chain the inspector this will calculate metrics for 60, 30, and 3 event windows
+inspector = inspector.inspect(days=60) \
+                     .inspect(days=30) \
+                     .inspect(days=3)
+
+# Put the updated calendar back on local storage
+inspector.calendar.to_csv('pre_earnings.csv')
+```
+
+Then you can use the local storge with your preferable BI tool (PowerBI, Tableau, Excel).
+At this point you should already have anomaly metrics.
