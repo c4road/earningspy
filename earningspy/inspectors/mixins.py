@@ -138,10 +138,11 @@ class CARMixin:
     def get_vix_for_date(self, row):
         earnings_date = row.name[0]
         ticker = row.name[1]
-        if row['IS_BMO'] == 1:
-            earnings_date = earnings_date
+
+        if not pd.isna(row['IS_AMC']) and row['IS_AMC'] == 1:
+            earnings_date = (earnings_date - BDay(1)).date()
         else:
-            earnings_date = (earnings_date + BDay(1)).date()
+            earnings_date = earnings_date
     
         if earnings_date not in self.price_history.index:
             earnings_date = self.price_history.index[self.price_history.index.get_indexer([earnings_date], method="nearest")[0]]

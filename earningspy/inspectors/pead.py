@@ -46,12 +46,12 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return calendar
 
 
-    def inspect(self, days=3, dry_run=False, reuse_timeseries=False):
+    def inspect(self, days=3, dry_run=False, reuse_timeseries=False, post_earnings=False):
 
         if days not in ALLOWED_WINDOWS:
             raise Exception(f'Invalid day range. Select from {ALLOWED_WINDOWS}')
 
-        self.affected_rows = self._get_affected_rows(days)
+        self.affected_rows = self._get_affected_rows(days, post_earnings=post_earnings)
         if dry_run:
             self.affected_rows = self.affected_rows.reset_index()
             self.affected_rows = self.affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY])
@@ -102,7 +102,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self._get_windows_vix(days=days)
 
 
-    def _get_affected_rows(self, days, check_column=ABS_RET_KEY, deep=False):
+    def _get_affected_rows(self, days, check_column=ABS_RET_KEY, deep=False, post_earnings=False):
 
         start = days
         end = days + 30
@@ -113,7 +113,12 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
             affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -start) &
                                           (self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -end)]
 
-        affected_rows = affected_rows[affected_rows[check_column.format(days)].isna()]
+        if not post_earnings:
+            try:
+                affected_rows = affected_rows[affected_rows[check_column.format(days)].isna()]
+            except KeyError:
+                raise Exception(f"Check column {check_column.format(days)} not found in the calendar. Is this post earnings data?"
+                       " If so, set post_earnings=True.")
         affected_rows = affected_rows.reset_index()
         affected_rows = affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
         return affected_rows
@@ -134,10 +139,8 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
 
         storage = storage.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
         storage[DAYS_TO_EARNINGS_KEY_CAPITAL] = storage.apply(lambda row: days_left(row), axis=1)
-        if type_ == 'post':
-            self.merged_data = pd.concat([self.calendar, storage], join='outer')
-        if type_ == 'pre':
-            self.merged_data = pd.concat([self.calendar, storage], join='outer')
+        
+        self.merged_data = pd.concat([self.calendar, storage], join='outer')
         self.merged_data = self.merged_data.reset_index()
         self.merged_data = self.merged_data.drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep='first')
         self.merged_data = self.merged_data.set_index([FINVIZ_EARNINGS_DATE_KEY])
