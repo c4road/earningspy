@@ -3,7 +3,8 @@ import numpy as np
 import pandas as pd
 from pandas.tseries.offsets import BDay
 
-from earningspy.generators.yahoo.async_timeseries import get_portfolio
+from earningspy.generators.yahoo.async_timeseries import get_portfolio as async_get_portfolio
+from earningspy.generators.yahoo.time_series import get_portfolio
 from earningspy.common.constants import (
     MARKET_DATA_TICKERS,
     TBILL_10_YEAR,
@@ -171,15 +172,17 @@ class TimeSeriesMixin:
     
         return price_history
 
-    def fetch_price_history(self, assets, from_='5y'):
+    def fetch_price_history(self, assets, from_='5y', async_=False):
 
         market_assets = MARKET_DATA_TICKERS
 
-        price_history = get_portfolio(list(assets) + market_assets, from_=from_)
+        if async_:
+            price_history = async_get_portfolio(list(assets) + market_assets, from_=from_)
+        else:
+            price_history = get_portfolio(list(assets) + market_assets, from_=from_)        
         price_history.index = pd.to_datetime(price_history.index, errors='coerce')
         price_history = price_history[~price_history.index.isna()]
         price_history = price_history[~price_history.index.duplicated(keep='first')]        
         price_history = price_history.sort_index()
 
         return price_history
-

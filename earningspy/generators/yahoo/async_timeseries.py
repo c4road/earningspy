@@ -91,7 +91,7 @@ async def get_portfolio_async(assets, from_='3m', start_date=None, end_date=dt.n
             if portfolio.empty:
                 portfolio = close_data[['Date', asset]]
             elif asset not in portfolio.columns:
-                portfolio = pd.concat([portfolio, close_data[asset]], axis=1)
+                portfolio = pd.merge(portfolio, close_data[['Date', asset]], on='Date', how='outer')
             
             # Random sleep to avoid rate limiting
             await asyncio.sleep(random.uniform(0.5, 1.0))

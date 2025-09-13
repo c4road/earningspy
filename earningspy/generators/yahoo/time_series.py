@@ -56,7 +56,8 @@ def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date())
             continue
         elif asset in portfolio.columns:
             continue
-        portfolio = pd.concat([portfolio, close_data[asset]], axis=1)
+        else:
+            portfolio = pd.merge(portfolio, close_data[['Date', asset]], on='Date', how='outer')
         sleep(.7)
 
     portfolio = portfolio.set_index('Date')
