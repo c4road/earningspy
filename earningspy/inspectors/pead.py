@@ -46,7 +46,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return calendar
 
 
-    def inspect(self, days=3, dry_run=False, reuse_timeseries=False, post_earnings=False):
+    def inspect(self, days=3, dry_run=False, reuse_timeseries=False, post_earnings=False, async_=False):
 
         if days not in ALLOWED_WINDOWS:
             raise Exception(f'Invalid day range. Select from {ALLOWED_WINDOWS}')
@@ -57,13 +57,13 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
             self.affected_rows = self.affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY])
             return self.affected_rows
 
-        self._process_windows_columns(days=days, reuse_timeseries=reuse_timeseries)
+        self._process_windows_columns(days=days, reuse_timeseries=reuse_timeseries, async_=async_)
         self._get_earnings_vix()
         self._find_and_remove_duplicates()
 
         return self
 
-    def refresh(self, days=3, dry_run=False, reuse_timeseries=False, check_column=None, deep=False):
+    def refresh(self, days=3, dry_run=False, reuse_timeseries=False, check_column=None, deep=False, async_=False):
 
         if days not in ALLOWED_WINDOWS:
             raise Exception(f'Invalid day range. Select from {ALLOWED_WINDOWS}')
@@ -77,17 +77,17 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
             self.affected_rows = self.affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY])
             return self.affected_rows
         
-        self._process_windows_columns(days=days, reuse_timeseries=reuse_timeseries)
+        self._process_windows_columns(days=days, reuse_timeseries=reuse_timeseries, async_=async_)
         self._get_earnings_vix()
         self._find_and_remove_duplicates()
 
         return self
         
 
-    def _process_windows_columns(self, days=3, reuse_timeseries=False):
+    def _process_windows_columns(self, days=3, reuse_timeseries=False, async_=False):
 
         if not reuse_timeseries:
-            self.price_history = self.fetch_price_history(assets=set(self.affected_rows.index.get_level_values(1).to_list()))
+            self.price_history = self.fetch_price_history(assets=set(self.affected_rows.index.get_level_values(1).to_list()), async_=async_)
 
         self.calendar = self.calendar.reset_index()
         self.calendar = self.calendar.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])

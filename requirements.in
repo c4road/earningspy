@@ -1,5 +1,6 @@
 numpy~=2.2.6 ; python_version == "3.10"
 numpy~=2.3.2 ; python_version >= "3.11"
+numpy~=2.0.2 ; python_version == "3.9"
 aiohttp
 beautifulsoup4
 cssselect
@@ -11,9 +12,8 @@ urllib3
 user-agent
 pandas
 
-contourpy~=1.1.1 ; python_version == "3.8"
-contourpy~=1.3.0 ; python_version >= "3.9" and python_version < "3.10"
-contourpy~=1.3.2 ; python_version >= "3.10"
+contourpy==1.3.0 ; python_version >= "3.9" and python_version < "3.10"
+contourpy==1.3.2 ; python_version >= "3.10"
 
 kiwisolver~=1.4.7 ; python_version < "3.10"
 kiwisolver>=1.4.8 ; python_version >= "3.10"
