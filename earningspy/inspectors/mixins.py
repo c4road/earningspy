@@ -21,6 +21,7 @@ class CARMixin:
     def get_window_pct_change(self, row, days):
         earnings_date = row.name[0]
         ticker = row.name[1]
+
         initial_date = (earnings_date - BDay(1)).date()
         end_date = (earnings_date + BDay(days)).date()
 
@@ -29,13 +30,24 @@ class CARMixin:
         if end_date not in self.price_history.index:
             end_date = self.price_history.index[self.price_history.index.get_indexer([end_date], method="nearest")[0]]
 
-        ts_slice = self.price_history.loc[initial_date:end_date]
         try:
-            value = ts_slice[ticker].pct_change(len(ts_slice) - 1, fill_method=None).iloc[-1]
-        except KeyError as e:
-            print(f"Ticker {ticker} is not in timeseries data")
-            value = np.nan
-        return np.round(value, 4)
+            ts_slice = self.price_history.loc[initial_date:end_date, ticker].copy()
+            ts_slice_ffill = ts_slice.ffill()
+            ts_valid = ts_slice_ffill.dropna()
+
+            if len(ts_valid) < 2:
+                print(f"⚠️ Not enough data after ffill for {ticker} between {initial_date} and {end_date}")
+                return np.nan
+
+            start_price = ts_valid.iloc[0]
+            end_price = ts_valid.iloc[-1]
+
+            pct = (end_price - start_price) / start_price
+            return np.round(pct, 4)
+
+        except KeyError:
+            print(f"❌ Ticker {ticker} not found in price history")
+            return np.nan
 
 
     def get_risk_free_rate(self, row, days):
@@ -76,11 +88,10 @@ class CARMixin:
             if days == 3:
                 exp_ret = self.price_history[ticker].loc[:date].pct_change(days, fill_method=None).mean()
             elif days == 30:
-                exp_ret = self.price_history[ticker].loc[:date].resample('M').ffill().pct_change().mean()
+                exp_ret = self.price_history[ticker].loc[:date].resample('1ME').ffill().pct_change(fill_method=None).mean()
             elif days == 60:
-                exp_ret = self.price_history[ticker].loc[:date].resample('2M').ffill().pct_change().mean()
+                exp_ret = self.price_history[ticker].loc[:date].resample('2ME').ffill().pct_change(fill_method=None).mean()
         except KeyError:
-            print(f'KeyError for days {days}, ticker {ticker}, date {date}')
             exp_ret = np.nan
 
         return np.round(exp_ret, 4)
@@ -93,9 +104,9 @@ class CARMixin:
             if days == 3:
                 exp_ret = self.price_history[SP_500_TICKER].loc[:date].pct_change(days, fill_method=None).mean()
             elif days == 30:
-                exp_ret = self.price_history[SP_500_TICKER].loc[:date].resample('1M').ffill().pct_change().mean()
+                exp_ret = self.price_history[SP_500_TICKER].loc[:date].resample('1ME').ffill().pct_change(fill_method=None).mean()
             elif days == 60:
-                exp_ret = self.price_history[SP_500_TICKER].loc[:date].resample('2M').ffill().pct_change().mean()
+                exp_ret = self.price_history[SP_500_TICKER].loc[:date].resample('2ME').ffill().pct_change(fill_method=None).mean()
         except KeyError:
             exp_ret = np.nan
 
