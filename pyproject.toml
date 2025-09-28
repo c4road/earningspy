@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "earningspy"
-version = "0.1.13"  # bump2version will manage this later
+version = "0.1.14"  # bump2version will manage this later
 description = "Python toolkit for PEAD research and earnings calendar analysis."
 readme = "README.md"
 license = { text = "MIT" }
