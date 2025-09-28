@@ -44,6 +44,9 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         calendar = calendar.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
 
         return calendar
+    
+    def _sort_calendar(self):
+        self.calendar = self.calendar.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
 
 
     def inspect(self, days=3, dry_run=False, reuse_timeseries=False, post_earnings=False, async_=False):
@@ -60,6 +63,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self._process_windows_columns(days=days, reuse_timeseries=reuse_timeseries, async_=async_)
         self._get_earnings_vix()
         self._find_and_remove_duplicates()
+        self._sort_calendar()
 
         return self
 
@@ -124,26 +128,32 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return affected_rows
 
 
-    def join(self, storage, type_='post'):
+    def join(self, storage):
 
         if storage is None or storage.empty:
             raise Exception("storage can't be empty")
 
-        if type_ == 'post' and self.calendar.empty:
-            print("new post data is empty nothing to concat")
-            return
+        if self.calendar.empty:
+            raise Exception("calendar is empty nothing to concat")
 
-        if type_ == 'pre' and self.calendar.empty:
-            print("new pre data is empty nothing to concat")
-            return
-
-        storage = storage.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
         storage[DAYS_TO_EARNINGS_KEY_CAPITAL] = storage.apply(lambda row: days_left(row), axis=1)
-        
+        storage = storage.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
+
         self.merged_data = pd.concat([self.calendar, storage], join='outer')
         self.merged_data = self.merged_data.reset_index()
-        self.merged_data = self.merged_data.drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep='first')
-        self.merged_data = self.merged_data.set_index([FINVIZ_EARNINGS_DATE_KEY])
+        self.merged_data['NON_NULL_SCORE'] = self.merged_data.notnull().sum(axis=1)
+        self.merged_data = (
+                self.merged_data.sort_values(by='NON_NULL_SCORE', ascending=False)
+                .drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep='first')
+                .drop(columns='NON_NULL_SCORE')
+            )
+
+        self.merged_data = (
+            self.merged_data.set_index([FINVIZ_EARNINGS_DATE_KEY])
+            .sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
+        )
+
+        self.calendar = self.calendar.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
 
         return self.merged_data
 
