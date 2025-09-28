@@ -42,20 +42,17 @@ def get_range_timestamps(start_date, end_date):
 
 
 def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date()):
-
-    portfolio = pd.DataFrame()
+    portfolio = None
     not_found = []
 
-    for i, asset in tqdm(enumerate(assets), total=len(assets)):
+    for asset in tqdm(assets):
         ticker_data = get_one_ticker(asset, from_=from_, start_date=start_date, end_date=end_date)
-        if ticker_data is None:
+        if ticker_data is None or ticker_data.empty:
             not_found.append(asset)
             continue
 
-        # Prepare and name index
         close_data = prepare_data(ticker_data, asset)
         if close_data.index.name != 'Date':
-            print(f"⚠️ Ticker {asset}: index not named 'Date'. Fixing it.")
             close_data.index.name = 'Date'
 
         close_data = close_data.reset_index()
@@ -65,18 +62,24 @@ def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date())
             not_found.append(asset)
             continue
 
-        if i == 0:
-            portfolio = close_data[['Date', asset]]
-        elif asset in portfolio.columns:
+        if portfolio is None:
+            portfolio = close_data[['Date']].copy()
+
+        if asset in portfolio.columns:
             continue
-        else:
-            portfolio = pd.merge(portfolio, close_data[['Date', asset]], on='Date', how='outer')
+
+        portfolio = pd.merge(portfolio, close_data[['Date', asset]], on='Date', how='outer')
 
         sleep(0.7)
+
+    if portfolio is None or portfolio.empty:
+        raise ValueError("No valid assets found — portfolio is empty")
+
 
     portfolio = portfolio.set_index('Date')
     portfolio.index = pd.to_datetime(portfolio.index)
     portfolio = portfolio.round(3)
+
     print(f"Not found assets: {len(set(not_found))}, {set(not_found)}")
     return portfolio
 
