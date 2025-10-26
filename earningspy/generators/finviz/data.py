@@ -25,11 +25,12 @@ def get_filters(sub_category=None, raw=False):
     return filters.get(sub_category)
 
 
-def _get_screener_data(filters=None, order='marketcap', query=None):
+def _get_screener_data(filters=None, order='marketcap', query=None, print_url=False):
 
     if not query:
         query = FINVIZ_URL.format(filters, CUSTOM_TABLE_FIELDS_ON_URL, order)
-
+    if print_url:
+        print(query)
     stock_list = Screener.init_from_url(query)
     data = pd.DataFrame(index=CUSTOM_TABLE_ALL_FIELDS_NEW)
     for stock in stock_list:
@@ -42,7 +43,7 @@ def _get_screener_data(filters=None, order='marketcap', query=None):
     return finviz_data_preprocessor(data)
 
 
-def get_by_earnings_date(scope):
+def get_by_earnings_date(scope, print_url=False):
     if scope not in VALID_SCOPES_EARNING_SCOPES:
         raise Exception(f"Invalid scope. Use {VALID_SCOPES_EARNING_SCOPES} instead")
     
@@ -61,7 +62,7 @@ def get_by_earnings_date(scope):
     elif scope == 'this_month':
         filters = 'earningsdate_thismonth'
 
-    return _get_screener_data(filters)
+    return _get_screener_data(filters, print_url=print_url)
 
 
 def get_by_tickers(tickers, order='marketcap'):

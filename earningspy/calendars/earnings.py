@@ -31,33 +31,33 @@ class EarningSpy:
 
 
     @classmethod
-    def get_this_week_earnings(cls):
-        data = get_by_earnings_date(scope="this_week")
+    def get_this_week_earnings(cls, print_url=False):
+        data = get_by_earnings_date(scope="this_week", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_previous_week_earnings(cls):
-        data = get_by_earnings_date(scope="last_week")
+    def get_previous_week_earnings(cls, print_url=False):
+        data = get_by_earnings_date(scope="last_week", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_next_week_earnings(cls):
-        data = get_by_earnings_date(scope="next_week")
+    def get_next_week_earnings(cls, print_url=False):
+        data = get_by_earnings_date(scope="next_week", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_this_month_earnings(cls):
-        data = get_by_earnings_date(scope="this_month")
+    def get_this_month_earnings(cls, print_url=False):
+        data = get_by_earnings_date(scope="this_month", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_today_bmo(cls):
-        data = get_by_earnings_date(scope="today_bmo")
+    def get_today_bmo(cls, print_url=False):
+        data = get_by_earnings_date(scope="today_bmo", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_yesterday_amc(cls):
-        data = get_by_earnings_date(scope="yesterday_amc")
+    def get_yesterday_amc(cls, print_url=False):
+        data = get_by_earnings_date(scope="yesterday_amc", print_url=print_url)
         return cls._arrange(data)
     
     @classmethod
