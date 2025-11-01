@@ -1,5 +1,6 @@
 -r requirements.txt
-pip-tools
+pip<25
+pip-tools>=7.4.1
 pipdeptree
 pytest
 bump2version

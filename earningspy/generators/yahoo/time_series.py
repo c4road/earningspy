@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 def get_range(range_from, end_date):
 
-    accepted_values = ['3m', '9m', '1y', '5y', '10y']
+    accepted_values = ['3m', '9m', '1y', '5y', '10y', '20y', '30y']
     if range_from not in accepted_values:
         raise Exception('Invalid from value')
 
@@ -24,7 +24,11 @@ def get_range(range_from, end_date):
         start_date = end_date - relativedelta(years=5)
     if range_from == '10y':
         start_date = end_date - relativedelta(years=10)
-    
+    if range_from == '20y':
+        start_date = end_date - relativedelta(years=20)
+    if range_from == '30y':
+        start_date = end_date - relativedelta(years=30)
+
     return str(start_date), str(end_date)
 
 
