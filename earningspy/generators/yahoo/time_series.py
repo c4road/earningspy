@@ -109,9 +109,12 @@ def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date())
     except Exception as e:
         raise 
     if response.ok:
-        data = pd.DataFrame.from_dict(response.json()['chart']['result'][0]['indicators']['quote'][0])
-        data['Date'] = response.json()['chart']['result'][0]['timestamp']
-        data['Date'] = data['Date'].apply(dt.fromtimestamp)
+        try:
+            data = pd.DataFrame.from_dict(response.json()['chart']['result'][0]['indicators']['quote'][0])
+            data['Date'] = response.json()['chart']['result'][0]['timestamp']
+            data['Date'] = data['Date'].apply(dt.fromtimestamp)
+        except KeyError:
+            return None
         data = data.set_index('Date', drop=True)
         data.index = data.index.normalize()
 
