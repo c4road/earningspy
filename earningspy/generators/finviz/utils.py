@@ -1,4 +1,5 @@
 import datetime
+from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 import numpy as np
 from earningspy.generators.finviz.constants import (
@@ -9,6 +10,12 @@ from earningspy.generators.finviz.constants import (
 )
 
 FINVIZ_URL = "https://finviz.com/screener.ashx?v=152&f={}{}&o={}"
+
+
+def round_half_up(value):
+    if value is None or pd.isna(value):
+        return np.nan
+    return int(Decimal(str(value)).quantize(0, rounding=ROUND_HALF_UP))
 
 
 def _process_money_value(value):
@@ -37,20 +44,33 @@ def _process_money_value(value):
             return value
 
 
-def _format_percent(percent):
-    if isinstance(percent, str):
-        if percent == '-':
-            return 0.0
+
+def _format_percent(value):
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return np.nan
+
+    # Handle strings like "3%", " 3.5 % ", "-"
+    if isinstance(value, str):
+        value = value.strip()
+        if value in {"", "-", "—"}:
+            return np.nan
+        value = value.replace("%", "")
         try:
-            percent = float(percent.strip('%'))
-        except:
-            percent = 0.0
-    elif isinstance(percent, int) or isinstance(percent, float): 
-        percent = float(percent)
-    else:
-        raise Exception('WARNING: Receiving weird type on percentaje: {}'.format(percent))
-    
-    return percent / 100
+            value = float(value)
+        except ValueError:
+            return np.nan
+
+    # At this point value should be numeric
+    try:
+        value = float(value)
+    except Exception:
+        return np.nan
+
+    # If value looks like a percentage (>1), convert to decimal
+    if abs(value) > 1:
+        value = value / 100
+
+    return value
 
 
 def _convert_percent_columns(data): 
@@ -166,6 +186,70 @@ def _process_earnings_time(row, time):
             return 0
 
 
+def _process_free_cash_flow(row):
+    try:
+        market_cap = row['Market Cap']
+        pfcf = row['P/FCF']
+
+        # Guard against invalid inputs
+        if pd.isna(market_cap) or pd.isna(pfcf):
+            return np.nan
+        if pfcf == 0:
+            return np.nan
+
+        value = market_cap / pfcf
+
+        # Catch inf / -inf / nan
+        if not np.isfinite(value):
+            return np.nan
+
+        return round_half_up(value)
+
+    except Exception:
+        print("Error trying to compute FCF")
+        return np.nan
+
+
+def _process_ebitda(row):
+    try:
+        ev = row['Enterprise Value']
+        ev_ebitda = row['EV/EBITDA']
+
+        # Guard against invalid inputs
+        if pd.isna(ev) or pd.isna(ev_ebitda):
+            return np.nan
+        if ev_ebitda == 0:
+            return np.nan
+
+        value = ev / ev_ebitda
+
+        # Catch inf / -inf / nan
+        if not np.isfinite(value):
+            return np.nan
+
+        return round_half_up(value)
+
+    except Exception:
+        print("Error trying to compute ebitda")
+        return np.nan
+    
+
+def _process_ebit(row):
+    try:
+        oper_margin = row['Oper M']
+        sales = row['Sales']
+        if pd.isna(oper_margin) or pd.isna(sales) or sales == 0:
+            return np.nan
+        value = oper_margin * sales
+        return round_half_up(value) if np.isfinite(value) else np.nan
+    except KeyError:
+        print("Error trying to compute ebitda")
+        raise
+    except Exception:
+        print("Error trying to compute ebit")
+        return np.nan
+    
+
 def _process_ex_dividend(row):
 
     value = row['Dividend Ex Date']
@@ -243,22 +327,33 @@ def _process_remaning_columns(data):
     data = data.T
     data.loc[:,'52W_NORM'] = data.apply(lambda row: _calculate_normalized_52w(row), axis=1)
 
+    # Index data
     data.loc[:,'IS_S&P500'] = data.apply(lambda row: _process_index(row, index='S&P500'), axis=1)
     data.loc[:,'IS_RUSSELL'] = data.apply(lambda row: _process_index(row, index='RUT'), axis=1)
     data.loc[:,'IS_NASDAQ'] = data.apply(lambda row: _process_index(row, index='NDX'), axis=1)
     data.loc[:,'IS_DOW_JONES'] = data.apply(lambda row: _process_index(row, index='DJIA'), axis=1)
 
+    # After Market close or Before Market Opens
     data.loc[:,'IS_AMC'] = data.apply(lambda row: _process_earnings_time(row, time='a'), axis=1)
     data.loc[:,'IS_BMO'] = data.apply(lambda row: _process_earnings_time(row, time='b'), axis=1)
 
+    # Dividend data
     data.loc[:,'Dividend Ex Date'] = data.apply(lambda row: _process_ex_dividend(row), axis=1)
 
+    # Options data
     data.loc[:,'Optionable'] = data.apply(lambda row: _process_yes_columns(row, col_name='Optionable'), axis=1)
     data.loc[:,'Shortable'] = data.apply(lambda row: _process_yes_columns(row, col_name='Shortable'), axis=1)
 
+    # Is US company and earnings date
     data.loc[:,'IS_USA'] = data.apply(lambda row: _process_country(row), axis=1)
     data.loc[:,'EARNINGS_DATE'] = data.apply(lambda row: _process_report_date(row), axis=1)
 
+    # Value investing data
+    data.loc[:, 'FCF'] = data.apply(lambda row: _process_free_cash_flow(row), axis=1)
+    data.loc[:, 'EBITDA'] = data.apply(lambda row: _process_ebitda(row), axis=1)
+    data.loc[:, 'EBIT'] = data.apply(lambda row: _process_ebit(row), axis=1)
+
+    # Data fetched on this date 
     data.loc[:, 'DATADATE'] = pd.to_datetime(datetime.datetime.now().date())
 
     return data.T
