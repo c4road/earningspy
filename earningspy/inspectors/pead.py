@@ -161,7 +161,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self.merged_data = (
             pd.concat([storage, self.calendar], join="outer")
             .sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
-            .reset_index(drop=True)
+            .reset_index()
             .drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep=keep)
             .set_index(FINVIZ_EARNINGS_DATE_KEY)
         )
@@ -169,10 +169,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self.merged_data[DAYS_TO_EARNINGS_KEY_CAPITAL] = (
             self.merged_data.apply(lambda row: days_left(row), axis=1)
         )
-
-        self.calendar = self.calendar.sort_values(
-            DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False
-        )
+        self.merged_data = self.merged_data.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
 
         return self.merged_data
 
