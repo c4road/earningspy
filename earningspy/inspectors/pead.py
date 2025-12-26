@@ -136,23 +136,13 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         if self.calendar.empty:
             raise Exception("calendar is empty nothing to concat")
 
-        storage[DAYS_TO_EARNINGS_KEY_CAPITAL] = storage.apply(lambda row: days_left(row), axis=1)
-        storage = storage.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
+        self.merged_data = (pd.concat([storage, self.calendar], join='outer')
+                            .sort_values('DAYS_LEFT', ascending=False)
+                            .reset_index()
+                            .drop_duplicates(subset=['EARNINGS_DATE', 'TICKER'], keep='last')
+                            .set_index(['EARNINGS_DATE']))
 
-        self.merged_data = pd.concat([self.calendar, storage], join='outer')
-        self.merged_data = self.merged_data.reset_index()
-        self.merged_data['NON_NULL_SCORE'] = self.merged_data.notnull().sum(axis=1)
-        self.merged_data = (
-                self.merged_data.sort_values(by='NON_NULL_SCORE', ascending=False)
-                .drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep='first')
-                .drop(columns='NON_NULL_SCORE')
-            )
-
-        self.merged_data = (
-            self.merged_data.set_index([FINVIZ_EARNINGS_DATE_KEY])
-            .sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
-        )
-
+        self.merged_data[DAYS_TO_EARNINGS_KEY_CAPITAL] = self.merged_data.apply(lambda row: days_left(row), axis=1)
         self.calendar = self.calendar.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
 
         return self.merged_data
