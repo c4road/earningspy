@@ -128,7 +128,13 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return affected_rows
 
 
-    def join(self, storage):
+    def join(self, storage, earnings_phase: str = "pre"):
+        """
+        Join calendar with storage data.
+
+        :param storage: DataFrame with historical data
+        :param earnings_phase: 'pre' or 'post'
+        """
 
         if storage is None or storage.empty:
             raise Exception("storage can't be empty")
@@ -136,14 +142,31 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         if self.calendar.empty:
             raise Exception("calendar is empty nothing to concat")
 
-        self.merged_data = (pd.concat([storage, self.calendar], join='outer')
-                            .sort_values('DAYS_LEFT', ascending=False)
-                            .reset_index()
-                            .drop_duplicates(subset=['EARNINGS_DATE', 'TICKER'], keep='last')
-                            .set_index(['EARNINGS_DATE']))
+        if earnings_phase not in {"pre", "post"}:
+            raise ValueError("earnings_phase must be either 'pre' or 'post'")
 
-        self.merged_data[DAYS_TO_EARNINGS_KEY_CAPITAL] = self.merged_data.apply(lambda row: days_left(row), axis=1)
-        self.calendar = self.calendar.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
+        if earnings_phase == "pre":
+            # Accounts for BMO row cases.
+            storage = storage[storage["DAYS_LEFT"] > 0]
+        else: 
+            # Account for AMC row cases.
+            storage = storage[storage["DAYS_LEFT"] <= -1]
+
+        self.merged_data = (
+            pd.concat([storage, self.calendar], join="outer")
+            .sort_values("DAYS_LEFT", ascending=False)
+            .reset_index(drop=True)
+            .drop_duplicates(subset=["EARNINGS_DATE", "TICKER"], keep="last")
+            .set_index("EARNINGS_DATE")
+        )
+
+        self.merged_data[DAYS_TO_EARNINGS_KEY_CAPITAL] = (
+            self.merged_data.apply(lambda row: days_left(row), axis=1)
+        )
+
+        self.calendar = self.calendar.sort_values(
+            DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False
+        )
 
         return self.merged_data
 
