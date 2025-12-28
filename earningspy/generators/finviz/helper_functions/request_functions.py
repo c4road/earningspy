@@ -17,6 +17,20 @@ from earningspy.generators.finviz.helper_functions.error_handling import Connect
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
+FINVIZ_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+
+    "Sec-CH-UA": '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": '"macOS"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
 def http_request_get(
     url, session=None, payload=None, parse=True, user_agent=generate_user_agent()
 ):
@@ -31,14 +45,14 @@ def http_request_get(
                 url,
                 params=payload,
                 verify=False,
-                headers={"User-Agent": user_agent},
+                headers=FINVIZ_HEADERS,
             )
         else:
             content = requests.get(
                 url,
                 params=payload,
                 verify=False,
-                headers={"User-Agent": user_agent},
+                headers=FINVIZ_HEADERS,
             )
 
         content.raise_for_status()  # Raise HTTPError for bad requests (4xx or 5xx)
@@ -52,7 +66,7 @@ def http_request_get(
 
 @tenacity.retry(wait=tenacity.wait_exponential())
 def finviz_request(url: str, user_agent: str) -> Response:
-    response = requests.get(url, headers={"User-Agent": user_agent})
+    response = requests.get(url, headers=FINVIZ_HEADERS)
     if response.text == "Too many requests.":
         raise Exception("Too many requests.")
     return response
@@ -101,7 +115,7 @@ class Connector:
 
         try:
             async with session.get(
-                url, headers={"User-Agent": self.user_agent}
+                url, headers=FINVIZ_HEADERS
             ) as response:
                 page_html = await response.read()
 
@@ -126,7 +140,7 @@ class Connector:
         timeout = aiohttp.ClientTimeout(total=connection_settings["CONNECTION_TIMEOUT"])
 
         async with aiohttp.ClientSession(
-            connector=conn, timeout=timeout, headers={"User-Agent": self.user_agent}
+            connector=conn, timeout=timeout, headers=FINVIZ_HEADERS
         ) as session:
             for url in self.urls:
                 async_tasks.append(self.__http_request__async(url, session))
