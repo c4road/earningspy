@@ -15,6 +15,7 @@ from earningspy.common.constants import (
     BHAR_KEY,
     ALLOWED_WINDOWS,
     AVAILABLE_CHECK_COLUMNS,
+    DATADATE_KEY
 )
 from earningspy.calendars.utils import days_left
 from earningspy.inspectors.mixins import CARMixin, TimeSeriesMixin
@@ -128,7 +129,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return affected_rows
 
 
-    def join(self, storage, earnings_phase: str = "pre", keep="last"):
+    def join(self, storage, earnings_phase: str = "pre", keep="first"):
         """
         Join calendar with storage data.
 
@@ -160,7 +161,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
 
         self.merged_data = (
             pd.concat([storage, self.calendar], join="outer")
-            .sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
+            .sort_values(DATADATE_KEY, ascending=False)
             .reset_index()
             .drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep=keep)
             .set_index(FINVIZ_EARNINGS_DATE_KEY)
