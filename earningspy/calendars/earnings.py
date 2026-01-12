@@ -89,6 +89,6 @@ class EarningSpy:
     @classmethod
     def _arrange(cls, data):
         data = data.set_index(FINVIZ_EARNINGS_DATE_KEY, drop=True)
-        data = data.sort_index(ascending=True)
+        data = data.sort_index(ascending=False)
         data = cls._compute_days_left(data)
         return calendar_pre_formatter(data)
