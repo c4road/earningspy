@@ -15,6 +15,7 @@ from earningspy.common.constants import (
     BHAR_KEY,
     ALLOWED_WINDOWS,
     AVAILABLE_CHECK_COLUMNS,
+    DATADATE_KEY
 )
 from earningspy.calendars.utils import days_left
 from earningspy.inspectors.mixins import CARMixin, TimeSeriesMixin
@@ -128,15 +129,15 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return affected_rows
 
 
-    def join(self, storage, earnings_phase: str = "pre", keep="last"):
+    def join(self, storage, earnings_phase: str = "pre", preserve="canonical"):
         """
         Join calendar with storage data.
 
         :param storage: DataFrame with historical data
         :param earnings_phase: 'pre' or 'post'
-        :param keep: 'first' or 'last'
-            first -> preserve data from new storage values
-            last -> Preserves data from the canonical storage (default)
+        :param preserve: 'canonical' or 'incoming'
+            canonical -> preserve data from the canonical calendar (self.calendar)
+            incoming -> preserve data from storage
         """
 
         if storage is None or storage.empty:
@@ -148,21 +149,54 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         if earnings_phase not in {"pre", "post"}:
             raise ValueError("earnings_phase must be either 'pre' or 'post'")
 
-        if keep not in {"first", "last"}:
-            raise ValueError("Keep must be either 'first' or 'last'")
+        if preserve not in {"canonical", "incoming"}:
+            raise ValueError("preserve must be either 'canonical' or 'incoming'")
 
         if earnings_phase == "pre":
-            # Accounts for BMO row cases.
-            storage = storage[storage[DAYS_TO_EARNINGS_KEY_CAPITAL] > 0]
-        else: 
-            # Account for AMC row cases.
-            storage = storage[storage[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -1]
+            storage = storage[storage[DAYS_TO_EARNINGS_KEY_CAPITAL] > 0].copy()
+        else:
+            storage = storage[storage[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -1].copy()
+
+        if storage.empty:
+            print("No data to merge after filtering by earnings_phase")
+            return self.calendar
+
+        cal = self.calendar.copy()
+
+        # --- Critical fix: ensure dedupe keys exist as COLUMNS (not only in the index) ---
+        needed_keys = {FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL}
+
+        if not needed_keys.issubset(storage.columns):
+            storage = storage.reset_index()
+
+        if not needed_keys.issubset(cal.columns):
+            cal = cal.reset_index()
+
+        # Ensure DATADATE exists in both frames and is consistently datetime
+        if DATADATE_KEY not in storage.columns:
+            storage[DATADATE_KEY] = pd.NaT
+        if DATADATE_KEY not in cal.columns:
+            cal[DATADATE_KEY] = pd.NaT
+
+        storage[DATADATE_KEY] = pd.to_datetime(storage[DATADATE_KEY], errors="raise", format="mixed")
+        cal[DATADATE_KEY] = pd.to_datetime(cal[DATADATE_KEY], errors="raise", format="mixed")
+
+        # Preserve rule: canonical => calendar wins; incoming => storage wins
+        if preserve == "canonical":
+            cal["_src_pri"] = 1
+            storage["_src_pri"] = 0
+        else:  # preserve == "incoming"
+            cal["_src_pri"] = 0
+            storage["_src_pri"] = 1
+
+        merged = pd.concat([storage, cal], join="outer", ignore_index=True)
 
         self.merged_data = (
-            pd.concat([storage, self.calendar], join="outer")
-            .sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
-            .reset_index()
-            .drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep=keep)
+            merged
+            .sort_values(["_src_pri", DATADATE_KEY], ascending=[False, False], kind="mergesort")
+            .drop_duplicates(subset=[FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL], keep="first")
+            .drop(columns=["_src_pri"])
+            .sort_values(DATADATE_KEY, ascending=False)
             .set_index(FINVIZ_EARNINGS_DATE_KEY)
         )
 
