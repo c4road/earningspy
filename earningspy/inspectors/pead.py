@@ -153,7 +153,10 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
             raise ValueError("preserve must be either 'canonical' or 'incoming'")
 
         if earnings_phase == "pre":
-            storage = storage[storage[DAYS_TO_EARNINGS_KEY_CAPITAL] > 0].copy()
+            # Do not get data that with more than a week before earnings
+            # In this context > 0 means more then 24h
+            storage = storage[(storage[DAYS_TO_EARNINGS_KEY_CAPITAL] > 0) & 
+                              (storage[DAYS_TO_EARNINGS_KEY_CAPITAL] <= 7)].copy()
         else:
             storage = storage[storage[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -1].copy()
 
