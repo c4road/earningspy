@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 import math
+from typing import Iterable, Optional
+
 import numpy as np
 import pandas as pd
 from pandas.tseries.offsets import BDay
@@ -18,7 +22,7 @@ from earningspy.common.constants import (
 
 class CARMixin:
 
-    def get_window_pct_change(self, row, days):
+    def get_window_pct_change(self, row: pd.Series, days: int) -> float:
         earnings_date = row.name[0]
         ticker = row.name[1]
 
@@ -50,23 +54,7 @@ class CARMixin:
             return np.nan
 
 
-    def get_risk_free_rate(self, row, days):
-
-        date = str(row.name[0].date())
-
-        if date not in self.price_history.index:
-            date = self.price_history.index[
-                self.price_history.index.get_indexer([date], method="nearest")[0]]
-        rf = self.price_history.loc[date][TBILL_10_YEAR]
-        
-        if math.isnan(rf):
-            rf = self.price_history[TBILL_10_YEAR].mean()
-        rf = (rf / 100) * (days / 251)
-
-        return np.round(rf, 4)
-
-
-    def get_capm(self, row, days=0):
+    def get_capm(self, row: pd.Series, days: int = 0) -> float:
 
         rf_label = RF_KEY.format(days).strip()
         R_label = EXP_RET_KEY.format(days).strip()
@@ -79,7 +67,7 @@ class CARMixin:
         return np.round(capm, 4)
 
 
-    def get_expected_return(self, row, days):
+    def get_expected_return(self, row: pd.Series, days: int) -> float:
 
         date = row.name[0]
         ticker = row.name[1]
@@ -97,7 +85,7 @@ class CARMixin:
         return np.round(exp_ret, 4)
 
 
-    def get_market_expected_return(self, row, days):
+    def get_market_expected_return(self, row: pd.Series, days: int) -> float:
 
         date = row.name[0]
         try:
@@ -113,7 +101,7 @@ class CARMixin:
         return np.round(exp_ret, 4)
 
 
-    def get_risk_free_rate(self, row, days):
+    def get_risk_free_rate(self, row: pd.Series, days: int) -> float:
 
         date = str(row.name[0].date())
         if date not in self.price_history.index:
@@ -127,7 +115,7 @@ class CARMixin:
         return np.round(rf, 4)
 
 
-    def get_vix(self, row, days=0):
+    def get_vix(self, row: pd.Series, days: int = 0) -> float:
         earnings_date = row.name[0]
         initial_date = (earnings_date - BDay(1)).date()
         end_date = (earnings_date + BDay(days)).date()
@@ -147,7 +135,7 @@ class CARMixin:
         return np.round(value, 2)
 
 
-    def get_vix_for_date(self, row):
+    def get_vix_for_date(self, row: pd.Series) -> float:
         earnings_date = row.name[0]
         ticker = row.name[1]
 
@@ -170,7 +158,11 @@ class CARMixin:
 
 class TimeSeriesMixin:
 
-    def _load_price_history(self, price_history, assets=None):
+    def _load_price_history(
+        self,
+        price_history: Optional[pd.DataFrame],
+        assets: Optional[Iterable[str]] = None,
+    ) -> Optional[pd.DataFrame]:
 
         if price_history is None or price_history.empty:
             return None
@@ -183,7 +175,12 @@ class TimeSeriesMixin:
     
         return price_history
 
-    def fetch_price_history(self, assets, from_='5y', async_=False):
+    def fetch_price_history(
+        self,
+        assets: Iterable[str],
+        from_: str = "5y",
+        async_: bool = False,
+    ) -> pd.DataFrame:
 
         market_assets = MARKET_DATA_TICKERS
 

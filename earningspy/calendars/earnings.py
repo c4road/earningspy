@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any, List, Optional
+
 import pandas as pd
 from earningspy.generators.finviz.data import (
     get_by_earnings_date, 
@@ -14,12 +18,18 @@ from earningspy.common.constants import (
 class EarningSpy:
 
     @classmethod
-    def filters(cls, *args, **kwargs):
+    def filters(cls, *args: Any, **kwargs: Any) -> Any:
         return get_filters(*args, **kwargs)
 
     @classmethod
-    def get_calendar(cls, sector=None, industry=None, index=None, future_only=True):
-        
+    def get_calendar(
+        cls,
+        sector: Optional[str] = None,
+        industry: Optional[str] = None,
+        index: Optional[str] = None,
+        future_only: bool = True,
+    ) -> pd.DataFrame:
+
         finviz_data = cls.get_finviz(sector=sector, 
                                      industry=industry, 
                                      index=index)
@@ -31,37 +41,37 @@ class EarningSpy:
 
 
     @classmethod
-    def get_this_week_earnings(cls, print_url=False):
+    def get_this_week_earnings(cls, print_url: bool = False) -> pd.DataFrame:
         data = get_by_earnings_date(scope="this_week", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_previous_week_earnings(cls, print_url=False):
+    def get_previous_week_earnings(cls, print_url: bool = False) -> pd.DataFrame:
         data = get_by_earnings_date(scope="last_week", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_next_week_earnings(cls, print_url=False):
+    def get_next_week_earnings(cls, print_url: bool = False) -> pd.DataFrame:
         data = get_by_earnings_date(scope="next_week", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_this_month_earnings(cls, print_url=False):
+    def get_this_month_earnings(cls, print_url: bool = False) -> pd.DataFrame:
         data = get_by_earnings_date(scope="this_month", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_today_bmo(cls, print_url=False):
+    def get_today_bmo(cls, print_url: bool = False) -> pd.DataFrame:
         data = get_by_earnings_date(scope="today_bmo", print_url=print_url)
         return cls._arrange(data)
 
     @classmethod
-    def get_yesterday_amc(cls, print_url=False):
+    def get_yesterday_amc(cls, print_url: bool = False) -> pd.DataFrame:
         data = get_by_earnings_date(scope="yesterday_amc", print_url=print_url)
         return cls._arrange(data)
     
     @classmethod
-    def get_by_tickers(cls, tickers):
+    def get_by_tickers(cls, tickers: List[str]) -> pd.DataFrame:
         """
         Get earnings data for a list of tickers.
         """
@@ -72,7 +82,7 @@ class EarningSpy:
         return cls._arrange(data)
 
     @classmethod
-    def _check_missing_dates(cls, finviz_data):
+    def _check_missing_dates(cls, finviz_data: pd.DataFrame) -> None:
         missing_count = finviz_data.index.to_series().apply(
             lambda row: isinstance(row, pd._libs.tslibs.nattype.NaTType) or pd.isna(row) or row is None
         ).sum()
@@ -80,14 +90,14 @@ class EarningSpy:
             print(f"[WARNING] Found {missing_count} missing earnings dates in the data.")
 
     @classmethod
-    def _compute_days_left(cls, finviz_data):
+    def _compute_days_left(cls, finviz_data: pd.DataFrame) -> pd.DataFrame:
         
         cls._check_missing_dates(finviz_data)
         finviz_data[DAYS_LEFT_KEY] = finviz_data.apply(lambda row: days_left(row), axis=1)
         return finviz_data
 
     @classmethod
-    def _arrange(cls, data):
+    def _arrange(cls, data: pd.DataFrame) -> pd.DataFrame:
         data = data.set_index(FINVIZ_EARNINGS_DATE_KEY, drop=True)
         data = data.sort_index(ascending=False)
         data = cls._compute_days_left(data)
