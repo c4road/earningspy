@@ -1,3 +1,5 @@
+from typing import Literal, Optional, Union
+
 import pandas as pd
 
 from earningspy.common.constants import (
@@ -27,30 +29,42 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
     pd.read_csv('<field-name>.csv', index_col=0, parse_dates=True)
     """
 
-    def __init__(self, 
-                 calendar=None,
-                 price_history=None):
+    def __init__(
+        self,
+        calendar: Optional[pd.DataFrame] = None,
+        price_history: Optional[pd.DataFrame] = None,
+    ):
 
-        self.calendar = self._load_calendar(calendar)
+        self.calendar: pd.DataFrame = self._load_calendar(calendar)
         self.backup = self.calendar.copy()
-        self.price_history = self._load_price_history(price_history)
+        self.price_history: Optional[pd.DataFrame] = self._load_price_history(price_history)
 
-        self.remaining_data = self.calendar[~(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -3)]
-        self.merged_data = None
+        self.remaining_data: pd.DataFrame = self.calendar[
+            ~(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -3)
+        ]
+        self.merged_data: Optional[pd.DataFrame] = None
+        self.affected_rows: Optional[pd.DataFrame] = None
 
 
-    def _load_calendar(self, calendar):
+    def _load_calendar(self, calendar: Optional[pd.DataFrame]) -> pd.DataFrame:
 
         calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] = calendar.apply(lambda row: days_left(row), axis=1)
         calendar = calendar.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
 
         return calendar
     
-    def _sort_calendar(self):
+    def _sort_calendar(self) -> None:
         self.calendar = self.calendar.sort_values(DAYS_TO_EARNINGS_KEY_CAPITAL, ascending=False)
 
 
-    def inspect(self, days=3, dry_run=False, reuse_timeseries=False, post_earnings=False, async_=False):
+    def inspect(
+        self,
+        days: int = 3,
+        dry_run: bool = False,
+        reuse_timeseries: bool = False,
+        post_earnings: bool = False,
+        async_: bool = False,
+    ) -> Union["PEADInspector", pd.DataFrame]:
 
         if days not in ALLOWED_WINDOWS:
             raise Exception(f'Invalid day range. Select from {ALLOWED_WINDOWS}')
@@ -68,7 +82,15 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
 
         return self
 
-    def refresh(self, days=3, dry_run=False, reuse_timeseries=False, check_column=None, deep=False, async_=False):
+    def refresh(
+        self,
+        days: int = 3,
+        dry_run: bool = False,
+        reuse_timeseries: bool = False,
+        check_column: Optional[str] = None,
+        deep: bool = False,
+        async_: bool = False,
+    ) -> Union["PEADInspector", pd.DataFrame]:
 
         if days not in ALLOWED_WINDOWS:
             raise Exception(f'Invalid day range. Select from {ALLOWED_WINDOWS}')
@@ -89,7 +111,12 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return self
         
 
-    def _process_windows_columns(self, days=3, reuse_timeseries=False, async_=False):
+    def _process_windows_columns(
+        self,
+        days: int = 3,
+        reuse_timeseries: bool = False,
+        async_: bool = False,
+    ) -> None:
 
         if not reuse_timeseries:
             self.price_history = self.fetch_price_history(assets=set(self.affected_rows.index.get_level_values(1).to_list()), async_=async_)
@@ -107,7 +134,13 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self._get_windows_vix(days=days)
 
 
-    def _get_affected_rows(self, days, check_column=ABS_RET_KEY, deep=False, post_earnings=False):
+    def _get_affected_rows(
+        self,
+        days: int,
+        check_column: str = ABS_RET_KEY,
+        deep: bool = False,
+        post_earnings: bool = False,
+    ) -> pd.DataFrame:
 
         start = days
         end = days + 30
@@ -129,7 +162,14 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return affected_rows
 
 
-    def join(self, storage, earnings_phase: str = "pre", preserve="canonical"):
+    def join(
+        self,
+        storage: pd.DataFrame,
+        earnings_phase: Literal["pre", "post"] = "pre",
+        preserve: Literal["canonical", "incoming"] = "canonical",
+        future_threshold_days: int = 5,
+        past_threshold_days: int = 5,
+    ) -> pd.DataFrame:
         """
         Join calendar with storage data.
 
@@ -153,12 +193,13 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
             raise ValueError("preserve must be either 'canonical' or 'incoming'")
 
         if earnings_phase == "pre":
-            # Do not get data that with more than a week before earnings
-            # In this context > 0 means more then 24h
+            # Do not get data that with more than 5 days before earnings
             storage = storage[(storage[DAYS_TO_EARNINGS_KEY_CAPITAL] > 0) & 
-                              (storage[DAYS_TO_EARNINGS_KEY_CAPITAL] <= 7)].copy()
+                              (storage[DAYS_TO_EARNINGS_KEY_CAPITAL] <= future_threshold_days)].copy()
+            
         else:
-            storage = storage[storage[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -1].copy()
+            storage = storage[(storage[DAYS_TO_EARNINGS_KEY_CAPITAL] < -1) & 
+                              (storage[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -past_threshold_days)].copy()
 
         if storage.empty:
             print("No data to merge after filtering by earnings_phase")
@@ -211,7 +252,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         return self.merged_data
 
 
-    def _get_windows_abnormal_return(self, days):
+    def _get_windows_abnormal_return(self, days: int) -> None:
 
         label = ABS_RET_KEY.format(days)
     
@@ -219,61 +260,61 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
             lambda row: self.get_window_pct_change(row, days=days), axis=1)
 
     
-    def _get_windows_market_expected_return(self, days):
+    def _get_windows_market_expected_return(self, days: int) -> None:
         
         label = MARK_EXP_KEY.format(days)
         self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_market_expected_return(row, days=days), axis=1)
 
 
-    def _get_windows_capm(self, days):
+    def _get_windows_capm(self, days: int) -> None:
 
         label = CAPM_KEY.format(days)
         self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_capm(row, days=days), axis=1)
 
 
-    def _get_windows_expected_return(self, days):
+    def _get_windows_expected_return(self, days: int) -> None:
 
         label = EXP_RET_KEY.format(days)
         self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_expected_return(row, days=days), axis=1)
 
 
-    def _get_windows_risk_free_rate(self, days):
+    def _get_windows_risk_free_rate(self, days: int) -> None:
         label = RF_KEY.format(days)
         self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_risk_free_rate(row, days=days), axis=1)
 
 
-    def _get_windows_vix(self, days):
+    def _get_windows_vix(self, days: int) -> None:
 
         label = VIX_KEY.format(days)
         self.calendar.loc[self.affected_rows.index, label] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_vix(row, days=days), axis=1)
 
 
-    def _get_earnings_vix(self):
+    def _get_earnings_vix(self) -> None:
 
         self.calendar.loc[self.affected_rows.index, EARNING_VIX_KEY] = self.calendar.loc[self.affected_rows.index].apply(
             lambda row: self.get_vix_for_date(row), axis=1)
 
 
-    def _get_windows_car(self, days):
+    def _get_windows_car(self, days: int) -> None:
         label = CAR_KEY.format(days)
         ret_label = ABS_RET_KEY.format(days)
         capm_label = CAPM_KEY.format(days)
         self.calendar.loc[self.affected_rows.index, label] = (self.calendar[ret_label] - self.calendar[capm_label]).round(4)
 
 
-    def _get_windows_bhar(self, days):
+    def _get_windows_bhar(self, days: int) -> None:
         label = BHAR_KEY.format(days)
         ret_label = ABS_RET_KEY.format(days)
         benchmark_label = MARK_EXP_KEY.format(days)
         self.calendar.loc[self.affected_rows.index, label] = (self.calendar[ret_label] - self.calendar[benchmark_label]).round(4)
 
 
-    def _find_and_remove_duplicates(self):
+    def _find_and_remove_duplicates(self) -> None:
         self.calendar = self.calendar.reset_index()
         self.calendar = self.calendar.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
         self.calendar = self.calendar[~self.calendar.index.duplicated(keep='first')]
@@ -284,7 +325,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self.calendar = self.calendar.set_index(FINVIZ_EARNINGS_DATE_KEY)
 
 
-    def _remove_duplicate_ticker_quarters(self):
+    def _remove_duplicate_ticker_quarters(self) -> None:
         self.calendar = self.calendar.reset_index()
         self.calendar['year'] = self.calendar[FINVIZ_EARNINGS_DATE_KEY].dt.year
         self.calendar['quarter'] = self.calendar[FINVIZ_EARNINGS_DATE_KEY].dt.quarter
