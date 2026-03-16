@@ -1,11 +1,24 @@
+import logging
 from time import sleep
-import requests
 from datetime import datetime as dt
-from dateutil.relativedelta import relativedelta
+
 import pandas as pd
+import requests
+from dateutil.relativedelta import relativedelta
 from tqdm import tqdm
 
 # Fixing this problem: https://www.reddit.com/r/sheets/comments/1farvxr/broken_yahoo_finance_url/
+
+logger = logging.getLogger(__name__)
+
+
+def _get_response_hint(response, limit=200):
+    response_text = str(getattr(response, 'text', '') or '').strip().replace('\n', ' ')
+    if not response_text:
+        return ''
+    if len(response_text) > limit:
+        return f"{response_text[:limit]}..."
+    return response_text
 
 
 def get_range(range_from, end_date):
@@ -45,46 +58,100 @@ def get_range_timestamps(start_date, end_date):
     return start_date, end_date
 
 
+def _normalize_close_frame(close_data, asset):
+    if close_data.index.name != 'Date':
+        close_data.index.name = 'Date'
+
+    if asset not in close_data.columns:
+        raise KeyError(asset)
+
+    close_frame = close_data[[asset]].copy()
+    close_frame.index = pd.to_datetime(close_frame.index, errors='coerce')
+    close_frame = close_frame[~close_frame.index.isna()]
+    close_frame = close_frame[~close_frame.index.duplicated(keep='last')]
+    close_frame.index.name = 'Date'
+    return close_frame
+
+
+def _finalize_portfolio(close_frames):
+    portfolio = pd.concat(close_frames, axis=1, join='outer')
+    portfolio.index = pd.to_datetime(portfolio.index, errors='coerce')
+    portfolio = portfolio[~portfolio.index.isna()]
+    portfolio = portfolio[~portfolio.index.duplicated(keep='last')]
+    portfolio.index.name = 'Date'
+    portfolio = portfolio.sort_index()
+    return portfolio.round(3)
+
+
 def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date()):
-    portfolio = None
+    close_frames = []
     not_found = []
+    seen_assets = set()
+    assets = list(assets)
+
+    logger.info(
+        "Fetching Yahoo portfolio for %s assets with from_=%s start_date=%s end_date=%s",
+        len(assets),
+        from_,
+        start_date,
+        end_date,
+    )
 
     for asset in tqdm(assets):
         ticker_data = get_one_ticker(asset, from_=from_, start_date=start_date, end_date=end_date)
-        if ticker_data is None or ticker_data.empty:
+        if ticker_data is None:
+            logger.warning("Skipping %s: no data returned from Yahoo fetch", asset)
             not_found.append(asset)
             continue
 
-        close_data = prepare_data(ticker_data, asset)
-        if close_data.index.name != 'Date':
-            close_data.index.name = 'Date'
-
-        close_data = close_data.reset_index()
-
-        if 'Date' not in close_data.columns or asset not in close_data.columns:
-            print(f"Skipping {asset}: malformed data")
+        if ticker_data.empty:
+            logger.warning("Skipping %s: Yahoo returned an empty dataset", asset)
             not_found.append(asset)
             continue
 
-        if portfolio is None:
-            portfolio = close_data[['Date']].copy()
-
-        if asset in portfolio.columns:
+        try:
+            close_data = prepare_data(ticker_data, asset)
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("Skipping %s: could not prepare ticker data (%s)", asset, exc)
+            not_found.append(asset)
             continue
 
-        portfolio = pd.merge(portfolio, close_data[['Date', asset]], on='Date', how='outer')
+        try:
+            close_frame = _normalize_close_frame(close_data, asset)
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("Skipping %s: malformed data after preparation (%s)", asset, exc)
+            not_found.append(asset)
+            continue
+        except Exception:
+            logger.exception("Skipping %s: could not normalize prepared data", asset)
+            not_found.append(asset)
+            continue
 
-        sleep(0.7)
+        if close_frame.empty:
+            logger.warning("Skipping %s: malformed data after preparation", asset)
+            not_found.append(asset)
+            continue
 
-    if portfolio is None or portfolio.empty:
+        if asset in seen_assets:
+            continue
+
+        close_frames.append(close_frame)
+        seen_assets.add(asset)
+
+        sleep(1)
+
+    if not close_frames:
+        logger.error(
+            "No valid assets found for Yahoo portfolio request. requested_assets=%s failure_count=%s",
+            assets,
+            len(not_found),
+        )
         raise ValueError("No valid assets found — portfolio is empty")
 
 
-    portfolio = portfolio.set_index('Date')
-    portfolio.index = pd.to_datetime(portfolio.index)
-    portfolio = portfolio.round(3)
+    portfolio = _finalize_portfolio(close_frames)
 
-    print(f"Not found assets: {len(set(not_found))}, {set(not_found)}")
+    logger.info("Not found assets: %s, %s", len(set(not_found)), sorted(set(not_found)))
     return portfolio
 
 
@@ -103,26 +170,55 @@ def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date())
 
     url = f"https://query2.finance.yahoo.com/v8/finance/chart/{asset}?" \
           f"period1={start}&period2={end}&interval=1d&events=history"
-    
+
+    logger.debug(
+        "Fetching Yahoo ticker asset=%s from_=%s start_date=%s end_date=%s start_ts=%s end_ts=%s url=%s",
+        asset,
+        from_,
+        start_date,
+        end_date,
+        start,
+        end,
+        url,
+    )
+
     try:
         response = requests.get(url, headers=headers)
-    except Exception as e:
-        raise 
-    if response.ok:
-        try:
-            data = pd.DataFrame.from_dict(response.json()['chart']['result'][0]['indicators']['quote'][0])
-            data['Date'] = response.json()['chart']['result'][0]['timestamp']
-            data['Date'] = data['Date'].apply(dt.fromtimestamp)
-        except KeyError:
-            return None
-        data = data.set_index('Date', drop=True)
-        data.index = data.index.normalize()
-
-        data.index.name = 'Date'
-
-        return data.round(2)
-    else:
+    except requests.RequestException as exc:
+        logger.warning("Yahoo request failed for %s: %s", asset, exc)
         return None
+    except Exception:
+        logger.exception("Unexpected Yahoo request failure for %s", asset)
+        return None
+
+    if not response.ok:
+        logger.warning(
+            "Yahoo request returned non-OK response for %s: status=%s body_hint=%s",
+            asset,
+            getattr(response, 'status_code', 'unknown'),
+            _get_response_hint(response),
+        )
+        return None
+
+    try:
+        payload = response.json()
+        result = payload['chart']['result'][0]
+        data = pd.DataFrame.from_dict(result['indicators']['quote'][0])
+        data['Date'] = result['timestamp']
+        data['Date'] = data['Date'].apply(dt.fromtimestamp)
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        logger.warning("Yahoo payload parsing failed for %s: %s", asset, exc)
+        return None
+    except Exception:
+        logger.exception("Unexpected Yahoo payload parsing failure for %s", asset)
+        return None
+
+    data = data.set_index('Date', drop=True)
+    data.index = data.index.normalize()
+
+    data.index.name = 'Date'
+
+    return data.round(2)
 
     
 def prepare_data(data, ticker):

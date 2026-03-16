@@ -40,6 +40,31 @@ def get_range_timestamps(start_date, end_date):
 
     return start_date, end_date
 
+
+def _normalize_close_frame(close_data, asset):
+    if close_data.index.name != 'Date':
+        close_data.index.name = 'Date'
+
+    if asset not in close_data.columns:
+        raise KeyError(asset)
+
+    close_frame = close_data[[asset]].copy()
+    close_frame.index = pd.to_datetime(close_frame.index, errors='coerce')
+    close_frame = close_frame[~close_frame.index.isna()]
+    close_frame = close_frame[~close_frame.index.duplicated(keep='last')]
+    close_frame.index.name = 'Date'
+    return close_frame
+
+
+def _finalize_portfolio(close_frames):
+    portfolio = pd.concat(close_frames, axis=1, join='outer')
+    portfolio.index = pd.to_datetime(portfolio.index, errors='coerce')
+    portfolio = portfolio[~portfolio.index.isna()]
+    portfolio = portfolio[~portfolio.index.duplicated(keep='last')]
+    portfolio.index.name = 'Date'
+    portfolio = portfolio.sort_index()
+    return portfolio.round(3)
+
 async def get_one_ticker_async(session, asset, from_='3m', start_date=None, end_date=dt.now().date()):
     headers = {
         'User-Agent': "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.0.3705;)",
@@ -72,8 +97,10 @@ async def get_one_ticker_async(session, asset, from_='3m', start_date=None, end_
         return asset, None
 
 async def get_portfolio_async(assets, from_='3m', start_date=None, end_date=dt.now().date()):
-    portfolio = pd.DataFrame()
+    close_frames = {}
     not_found = []
+    seen_assets = set()
+    assets = list(assets)
 
     async with aiohttp.ClientSession() as session:
         tasks = []
@@ -86,19 +113,26 @@ async def get_portfolio_async(assets, from_='3m', start_date=None, end_date=dt.n
                 not_found.append(asset)
                 continue
             
-            close_data = prepare_data(ticker_data, asset).reset_index()
-            
-            if portfolio.empty:
-                portfolio = close_data[['Date', asset]]
-            elif asset not in portfolio.columns:
-                portfolio = pd.merge(portfolio, close_data[['Date', asset]], on='Date', how='outer')
+            try:
+                close_data = prepare_data(ticker_data, asset)
+                close_frame = _normalize_close_frame(close_data, asset)
+            except (KeyError, TypeError, ValueError):
+                not_found.append(asset)
+                continue
+
+            if close_frame.empty or asset in seen_assets:
+                continue
+
+            close_frames[asset] = close_frame
+            seen_assets.add(asset)
             
             # Random sleep to avoid rate limiting
             await asyncio.sleep(random.uniform(0.5, 1.0))
 
-    portfolio = portfolio.set_index('Date')
-    portfolio.index = pd.to_datetime(portfolio.index)
-    portfolio = portfolio.round(3)
+    if not close_frames:
+        raise ValueError("No valid assets found — portfolio is empty")
+
+    portfolio = _finalize_portfolio([close_frames[asset] for asset in assets if asset in close_frames])
     if len(not_found):
         print(f"Not found assets: {len(set(not_found))}, {set(not_found)}")
     return portfolio
