@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -22,25 +22,59 @@ from earningspy.common.constants import (
 
 class CARMixin:
 
+    def _coerce_price_timestamp(self, value: Union[pd.Timestamp, str]) -> pd.Timestamp:
+        return pd.Timestamp(value).normalize()
+
+    def _resolve_price_date(
+        self,
+        target: Union[pd.Timestamp, str],
+        method: str = "nearest",
+        fallback_method: Optional[str] = None,
+    ) -> pd.Timestamp:
+        target_ts = self._coerce_price_timestamp(target)
+
+        if target_ts in self.price_history.index:
+            return target_ts
+
+        locator = self.price_history.index.get_indexer([target_ts], method=method)[0]
+        if locator == -1 and fallback_method is not None:
+            locator = self.price_history.index.get_indexer([target_ts], method=fallback_method)[0]
+        if locator == -1:
+            raise KeyError(f"Could not resolve trading date for {target_ts}")
+
+        return self.price_history.index[locator]
+
+    def _resolve_window_dates(self, earnings_date: pd.Timestamp, days: int) -> tuple[pd.Timestamp, pd.Timestamp]:
+        earnings_ts = self._coerce_price_timestamp(earnings_date)
+        initial_target = earnings_ts - BDay(1)
+        end_target = earnings_ts + BDay(days)
+
+        # Start should not jump forward when a prior trading day exists.
+        initial_date = self._resolve_price_date(initial_target, method="pad", fallback_method="backfill")
+        # End should not jump backward when a later trading day exists.
+        end_date = self._resolve_price_date(end_target, method="backfill", fallback_method="pad")
+
+        return initial_date, end_date
+
     def get_window_pct_change(self, row: pd.Series, days: int) -> float:
         earnings_date = row.name[0]
         ticker = row.name[1]
 
-        initial_date = (earnings_date - BDay(1)).date()
-        end_date = (earnings_date + BDay(days)).date()
-
-        if initial_date not in self.price_history.index:
-            initial_date = self.price_history.index[self.price_history.index.get_indexer([initial_date], method="nearest")[0]]
-        if end_date not in self.price_history.index:
-            end_date = self.price_history.index[self.price_history.index.get_indexer([end_date], method="nearest")[0]]
+        initial_target = self._coerce_price_timestamp(earnings_date) - BDay(1)
+        end_target = self._coerce_price_timestamp(earnings_date) + BDay(days)
 
         try:
-            ts_slice = self.price_history.loc[initial_date:end_date, ticker].copy()
-            ts_slice_ffill = ts_slice.ffill()
+            initial_date, end_date = self._resolve_window_dates(earnings_date, days)
+            ts_slice = self.price_history.loc[:end_date, ticker].copy()
+            ts_slice_ffill = ts_slice.ffill().loc[initial_date:end_date]
             ts_valid = ts_slice_ffill.dropna()
 
             if len(ts_valid) < 2:
-                print(f"⚠️ Not enough data after ffill for {ticker} between {initial_date} and {end_date}")
+                print(
+                    "⚠️ Not enough data after ffill for "
+                    f"{ticker}. target window {initial_target} -> {end_target}, "
+                    f"resolved window {initial_date} -> {end_date}"
+                )
                 return np.nan
 
             start_price = ts_valid.iloc[0]
@@ -49,8 +83,8 @@ class CARMixin:
             pct = (end_price - start_price) / start_price
             return np.round(pct, 4)
 
-        except KeyError:
-            print(f"❌ Ticker {ticker} not found in price history")
+        except KeyError as exc:
+            print(f"❌ Could not compute window pct change for {ticker}: {exc}")
             return np.nan
 
 
@@ -103,10 +137,7 @@ class CARMixin:
 
     def get_risk_free_rate(self, row: pd.Series, days: int) -> float:
 
-        date = str(row.name[0].date())
-        if date not in self.price_history.index:
-            date = self.price_history.index[
-                self.price_history.index.get_indexer([date], method="nearest")[0]]
+        date = self._resolve_price_date(row.name[0], method="pad", fallback_method="backfill")
         rf = self.price_history.loc[date][TBILL_10_YEAR]
 
         if math.isnan(rf):
@@ -117,13 +148,7 @@ class CARMixin:
 
     def get_vix(self, row: pd.Series, days: int = 0) -> float:
         earnings_date = row.name[0]
-        initial_date = (earnings_date - BDay(1)).date()
-        end_date = (earnings_date + BDay(days)).date()
-
-        if initial_date not in self.price_history.index:
-            initial_date = self.price_history.index[self.price_history.index.get_indexer([initial_date], method="nearest")[0]]
-        if end_date not in self.price_history.index:
-            end_date = self.price_history.index[self.price_history.index.get_indexer([end_date], method="nearest")[0]]
+        initial_date, end_date = self._resolve_window_dates(earnings_date, days)
 
         ts_slice = self.price_history.loc[initial_date:end_date]
         try:
@@ -140,12 +165,9 @@ class CARMixin:
         ticker = row.name[1]
 
         if not pd.isna(row['IS_AMC']) and row['IS_AMC'] == 1:
-            earnings_date = (earnings_date - BDay(1)).date()
-        else:
-            earnings_date = earnings_date
-    
-        if earnings_date not in self.price_history.index:
-            earnings_date = self.price_history.index[self.price_history.index.get_indexer([earnings_date], method="nearest")[0]]
+            earnings_date = self._coerce_price_timestamp(earnings_date) - BDay(1)
+
+        earnings_date = self._resolve_price_date(earnings_date, method="pad", fallback_method="backfill")
 
         try:
             value = self.price_history.loc[earnings_date][VIX_TICKER]

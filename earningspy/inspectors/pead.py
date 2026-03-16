@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Literal, Optional, Union
 
 import pandas as pd
@@ -167,8 +169,8 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         storage: pd.DataFrame,
         earnings_phase: Literal["pre", "post"] = "pre",
         preserve: Literal["canonical", "incoming"] = "canonical",
-        future_threshold_days: int = 5,
-        past_threshold_days: int = 5,
+        future_threshold_days: int = 7,
+        past_threshold_days: int = 1,
     ) -> pd.DataFrame:
         """
         Join calendar with storage data.
