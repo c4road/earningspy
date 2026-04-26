@@ -1,11 +1,13 @@
+import warnings
 import pandas as pd
 from earningspy.generators.finviz.screener import Screener
 from pprint import pprint as pp
 from earningspy.generators.finviz.constants import (
-    CUSTOM_TABLE_ALL_FIELDS_NEW,    
+    CUSTOM_TABLE_ALL_FIELDS_NEW,
     CUSTOM_TABLE_FIELDS_ON_URL,
     TICKER_KEY,
-    VALID_SCOPES_EARNING_SCOPES
+    VALID_SCOPES_EARNING_SCOPES,
+    FINVIZ_COLUMN_RENAMES,
 )
 from earningspy.generators.finviz.utils import finviz_data_preprocessor
 
@@ -40,6 +42,21 @@ def _get_screener_data(filters=None, order='marketcap', query=None, print_url=Fa
             if key in CUSTOM_TABLE_ALL_FIELDS_NEW:
                 ticker_data.loc[key, ticker] = value
         data = pd.concat([data, ticker_data], axis=1)
+
+    missing = [col for col in CUSTOM_TABLE_ALL_FIELDS_NEW if data.loc[col].isna().all()]
+    if missing:
+        warnings.warn(
+            f"\n{'=' * 60}\n"
+            f"!! FINVIZ COLUMN MISMATCH DETECTED !!\n"
+            f"The following columns are entirely NaN — Finviz may have\n"
+            f"renamed or removed them. Check FINVIZ_COLUMN_RENAMES in\n"
+            f"constants.py and update CUSTOM_TABLE_ALL_FIELDS_NEW.\n"
+            f"Affected columns: {missing}\n"
+            f"{'=' * 60}",
+            UserWarning,
+            stacklevel=2,
+        )
+
     return finviz_data_preprocessor(data)
 
 

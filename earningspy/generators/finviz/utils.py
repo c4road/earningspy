@@ -6,7 +6,8 @@ from earningspy.generators.finviz.constants import (
     PERCENTAJE_COLUMNS,
     MONEY_COLUMNS,
     NUMERIC_COLUMNS,
-    FINVIZ_DROP_COLUMNS
+    FINVIZ_DROP_COLUMNS,
+    FINVIZ_COLUMN_RENAMES,
 )
 
 FINVIZ_URL = "https://finviz.com/screener.ashx?v=152&f={}{}&o={}"
@@ -304,6 +305,7 @@ def _process_numeric_columns(data):
         except Exception as e:
             print('Unable to transform this column: {} - {}'.format(col, e))
             data.loc[col] = np.nan
+    data = data.rename(index=FINVIZ_COLUMN_RENAMES)
     return data
 
 
