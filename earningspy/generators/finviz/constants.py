@@ -12,7 +12,7 @@ CUSTOM_TABLE_ALL_FIELDS_NEW = [
     'Country',
     'Market Cap',
     'P/E',
-    'Fwd P/E',
+    'Forward P/E',
     'PEG',
     'P/S',
     'P/B',
@@ -190,7 +190,7 @@ NUMERIC_COLUMNS = [
     'Price',
     'Volume',
     'P/E',
-    'Fwd P/E',
+    'Forward P/E',
     'PEG',
     'P/S',
     'Book/sh',
@@ -199,7 +199,6 @@ NUMERIC_COLUMNS = [
     'Cash/sh',
     'P/C',
     'EPS next Q',
-    'Fwd P/E',
     'EPS',
     'Short Ratio',
     'Short Interest',
@@ -218,6 +217,29 @@ BOOLEAN_COLUMNS = [
     'Optionable',
     'Shortable'
 ]
+
+# ==============================================================
+# !! WARNING: FINVIZ COLUMN RENAME MAP !!
+# ==============================================================
+# Finviz occasionally renames columns in their screener HTML
+# without notice. When that happens:
+#
+#   1. Add the mapping here:  {new_finviz_name: our_internal_name}
+#   2. Update CUSTOM_TABLE_ALL_FIELDS_NEW with the new Finviz name
+#   3. Update the relevant processing list (NUMERIC_COLUMNS, etc.)
+#      to use the new Finviz name
+#
+# The rename back to our internal name is applied automatically
+# at the end of _process_numeric_columns() in utils.py.
+# A runtime UserWarning fires if the Finviz column is all-NaN,
+# which likely means Finviz renamed it AGAIN — check here first.
+#
+# History of renames:
+#   2026-04-26: Finviz renamed "Fwd P/E" → "Forward P/E"
+# ==============================================================
+FINVIZ_COLUMN_RENAMES = {
+    'Forward P/E': 'Fwd P/E',
+}
 
 TICKER_KEY = 'Ticker'
 VALID_SCOPES_EARNING_SCOPES = [
