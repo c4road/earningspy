@@ -28,6 +28,7 @@ This will show detailed logs including:
 import logging
 import warnings
 import pandas as pd
+from urllib.parse import parse_qs, unquote_plus, urlparse
 from earningspy.generators.finviz.screener import Screener
 from earningspy.generators.finviz.helper_functions.request_functions import _create_session
 from pprint import pprint as pp
@@ -67,6 +68,25 @@ def get_available_filters(filter_category=None, show_raw=False):
     return filters.get(filter_category)
 
 
+def _format_finviz_url_for_logging(full_query_url):
+    """Format a Finviz query URL into a readable, multi-line log string."""
+    parsed = urlparse(full_query_url)
+    query_params = parse_qs(parsed.query, keep_blank_values=True)
+
+    lines = [f"Finviz query: {parsed.scheme}://{parsed.netloc}{parsed.path}", "Query parameters:"]
+    for key in sorted(query_params):
+        values = [unquote_plus(value) for value in query_params[key]]
+        decoded = ", ".join(values)
+        if len(decoded) > 120 and ',' in decoded:
+            decoded = ",\n      ".join(values)
+            decoded = f"\n      {decoded}"
+        if decoded == "":
+            decoded = "<empty>"
+        lines.append(f"  {key} = {decoded}")
+
+    return "\n".join(lines)
+
+
 def _get_screener_data(filter_string=None, sort_column='marketcap', full_query_url=None, log_url=False):
     """Fetch screener data from Finviz with connection pooling and timeout.
 
@@ -85,7 +105,7 @@ def _get_screener_data(filter_string=None, sort_column='marketcap', full_query_u
         full_query_url = f"https://finviz.com/screener.ashx?v=152&f={filter_param}&{custom_fields}&o={sort_column}"
 
     if log_url:
-        logger.info(f"Finviz query: {full_query_url}")
+        logger.info(_format_finviz_url_for_logging(full_query_url))
 
     logger.info(f"Fetching Finviz screener data (filters={filter_string}, order={sort_column})")
     

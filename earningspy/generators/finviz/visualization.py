@@ -1,7 +1,7 @@
 """
 Finviz Data Visualization Module
 
-This module provides interactive D3.js-based visualizations for financial data
+This module provides interactive Plotly-based visualizations for financial data
 from the Finviz screener. Uses Plotly for creating interactive charts that
 can be displayed in web browsers or Jupyter notebooks.
 
@@ -104,8 +104,16 @@ def create_pe_pb_scatter(df, color_by='Sector', size_by='Market Cap', hover_data
         hover_data = default_hover
 
     # Filter hover_data to only include columns that exist in the dataframe
-    available_columns = df.columns.tolist()
+    available_columns = plot_df.columns.tolist()
     hover_data = [col for col in hover_data if col in available_columns]
+
+    if color_by not in plot_df.columns:
+        logger.warning("Color column '%s' not found in data; falling back to no color grouping.", color_by)
+        color_by = None
+
+    if size_by not in plot_df.columns:
+        logger.warning("Size column '%s' not found in data; falling back to default marker size.", size_by)
+        size_by = None
 
     # Create the scatter plot
     fig = px.scatter(
@@ -171,6 +179,10 @@ def create_market_cap_distribution(df, bins=20, color_by='Sector'):
 
     # Convert to billions for better readability
     plot_df['Market Cap (B)'] = plot_df['Market Cap'] / 1e9
+
+    if color_by not in plot_df.columns:
+        logger.warning("Color column '%s' not found in market cap data; using no color grouping.", color_by)
+        color_by = None
 
     fig = px.histogram(
         plot_df,
@@ -270,7 +282,16 @@ def create_volatility_analysis(df, color_by='Sector'):
         if col in plot_df.columns:
             plot_df[col] = pd.to_numeric(plot_df[col], errors='coerce')
 
+    if 'Beta' not in plot_df.columns or 'Volatility M' not in plot_df.columns:
+        logger.warning("Missing required volatility columns; returning empty volatility figure.")
+        return go.Figure()
+
     plot_df = plot_df.dropna(subset=['Beta', 'Volatility M'])
+
+    hover_columns = [col for col in ['Ticker', 'Company', 'Price'] if col in plot_df.columns]
+    if color_by not in plot_df.columns:
+        logger.warning("Color column '%s' not found in volatility data; using default color grouping.", color_by)
+        color_by = None
 
     fig = px.scatter(
         plot_df,
@@ -278,7 +299,7 @@ def create_volatility_analysis(df, color_by='Sector'):
         y='Volatility M',
         color=color_by,
         size='Market Cap' if 'Market Cap' in plot_df.columns else None,
-        hover_data=['Ticker', 'Company', 'Price'],
+        hover_data=hover_columns,
         title='Volatility Analysis: Beta vs Monthly Volatility',
         labels={
             'Beta': 'Beta (Market Volatility)',
