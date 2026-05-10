@@ -1,5 +1,8 @@
 name: Publish Wheel to PyPi
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   workflow_dispatch:
 
@@ -8,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -36,7 +39,7 @@ jobs:
     needs: [upload-wheel] 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0 
   
