@@ -1,11 +1,13 @@
 import logging
-from time import sleep
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime as dt
+from time import sleep
 
 import pandas as pd
 import requests
 from dateutil.relativedelta import relativedelta
-from tqdm import tqdm
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Fixing this problem: https://www.reddit.com/r/sheets/comments/1farvxr/broken_yahoo_finance_url/
 
@@ -83,80 +85,36 @@ def _finalize_portfolio(close_frames):
     return portfolio.round(3)
 
 
-def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date()):
-    close_frames = []
-    not_found = []
-    seen_assets = set()
-    assets = list(assets)
+def _get_retry_strategy(total=3, backoff_factor=0.3, status_forcelist=None):
+    if status_forcelist is None:
+        status_forcelist = [429, 500, 502, 503, 504]
 
-    logger.info(
-        "Fetching Yahoo portfolio for %s assets with from_=%s start_date=%s end_date=%s",
-        len(assets),
-        from_,
-        start_date,
-        end_date,
-    )
+    retry_kwargs = {
+        'total': total,
+        'backoff_factor': backoff_factor,
+        'status_forcelist': status_forcelist,
+        'raise_on_status': False,
+        'raise_on_redirect': False,
+    }
 
-    for asset in tqdm(assets):
-        ticker_data = get_one_ticker(asset, from_=from_, start_date=start_date, end_date=end_date)
-        if ticker_data is None:
-            logger.warning("Skipping %s: no data returned from Yahoo fetch", asset)
-            not_found.append(asset)
-            continue
+    try:
+        retry_kwargs['allowed_methods'] = frozenset(['GET'])
+    except TypeError:
+        retry_kwargs['method_whitelist'] = frozenset(['GET'])
 
-        if ticker_data.empty:
-            logger.warning("Skipping %s: Yahoo returned an empty dataset", asset)
-            not_found.append(asset)
-            continue
-
-        try:
-            close_data = prepare_data(ticker_data, asset)
-        except (KeyError, TypeError, ValueError) as exc:
-            logger.warning("Skipping %s: could not prepare ticker data (%s)", asset, exc)
-            not_found.append(asset)
-            continue
-
-        try:
-            close_frame = _normalize_close_frame(close_data, asset)
-        except (KeyError, TypeError, ValueError) as exc:
-            logger.warning("Skipping %s: malformed data after preparation (%s)", asset, exc)
-            not_found.append(asset)
-            continue
-        except Exception:
-            logger.exception("Skipping %s: could not normalize prepared data", asset)
-            not_found.append(asset)
-            continue
-
-        if close_frame.empty:
-            logger.warning("Skipping %s: malformed data after preparation", asset)
-            not_found.append(asset)
-            continue
-
-        if asset in seen_assets:
-            continue
-
-        close_frames.append(close_frame)
-        seen_assets.add(asset)
-
-        sleep(1)
-
-    if not close_frames:
-        logger.error(
-            "No valid assets found for Yahoo portfolio request. requested_assets=%s failure_count=%s",
-            assets,
-            len(not_found),
-        )
-        raise ValueError("No valid assets found — portfolio is empty")
+    return Retry(**retry_kwargs)
 
 
-    portfolio = _finalize_portfolio(close_frames)
+def _create_session():
+    session = requests.Session()
+    retry_strategy = _get_retry_strategy()
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=20, pool_maxsize=20)
+    session.mount('https://', adapter)
+    session.mount('http://', adapter)
+    return session
 
-    logger.info("Not found assets: %s, %s", len(set(not_found)), sorted(set(not_found)))
-    return portfolio
 
-
-def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date()):
-    
+def _fetch_ticker_data(session, asset, from_='3m', start_date=None, end_date=dt.now().date(), timeout=10):
     headers = {
         'User-Agent': "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.2; .NET CLR 1.0.3705;)",
     }
@@ -171,25 +129,32 @@ def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date())
     url = f"https://query2.finance.yahoo.com/v8/finance/chart/{asset}?" \
           f"period1={start}&period2={end}&interval=1d&events=history"
 
-    logger.debug(
-        "Fetching Yahoo ticker asset=%s from_=%s start_date=%s end_date=%s start_ts=%s end_ts=%s url=%s",
+    logger.info(
+        "Fetching Yahoo ticker %s from_=%s start_date=%s end_date=%s",
         asset,
         from_,
         start_date,
         end_date,
+    )
+    logger.debug(
+        "Yahoo request asset=%s start_ts=%s end_ts=%s url=%s",
+        asset,
         start,
         end,
         url,
     )
 
     try:
-        response = requests.get(url, headers=headers)
+        if session is None:
+            response = requests.get(url, headers=headers, timeout=timeout)
+        else:
+            response = session.get(url, headers=headers, timeout=timeout)
     except requests.RequestException as exc:
         logger.warning("Yahoo request failed for %s: %s", asset, exc)
-        return None
+        return asset, None
     except Exception:
         logger.exception("Unexpected Yahoo request failure for %s", asset)
-        return None
+        return asset, None
 
     if not response.ok:
         logger.warning(
@@ -198,7 +163,7 @@ def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date())
             getattr(response, 'status_code', 'unknown'),
             _get_response_hint(response),
         )
-        return None
+        return asset, None
 
     try:
         payload = response.json()
@@ -208,19 +173,124 @@ def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date())
         data['Date'] = data['Date'].apply(dt.fromtimestamp)
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         logger.warning("Yahoo payload parsing failed for %s: %s", asset, exc)
-        return None
+        return asset, None
     except Exception:
         logger.exception("Unexpected Yahoo payload parsing failure for %s", asset)
-        return None
+        return asset, None
 
     data = data.set_index('Date', drop=True)
     data.index = data.index.normalize()
-
     data.index.name = 'Date'
 
-    return data.round(2)
+    result_data = data.round(2)
+    logger.info(
+        "Successfully fetched Yahoo ticker %s rows=%s",
+        asset,
+        len(result_data),
+    )
+    return asset, result_data
 
-    
+
+def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date(), timeout=10, max_workers=10):
+    close_frames = []
+    not_found = []
+    assets = list(assets)
+    seen_assets = set()
+    unique_assets = []
+
+    for asset in assets:
+        if asset not in seen_assets:
+            unique_assets.append(asset)
+            seen_assets.add(asset)
+
+    logger.info(
+        "Fetching Yahoo portfolio for %s assets with from_=%s start_date=%s end_date=%s",
+        len(unique_assets),
+        from_,
+        start_date,
+        end_date,
+    )
+
+    with _create_session() as session:
+        futures = {}
+        total = len(unique_assets)
+        completed = 0
+        worker_count = min(max_workers, total) if unique_assets else 1
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            for asset in unique_assets:
+                futures[executor.submit(get_one_ticker, asset, from_, start_date, end_date, session, timeout)] = asset
+
+            for future in as_completed(futures):
+                asset = futures[future]
+                completed += 1
+                percent = completed * 100.0 / total if total else 0.0
+                logger.info(
+                    "Yahoo progress %s/%s (%.0f%%) for %s",
+                    completed,
+                    total,
+                    percent,
+                    asset,
+                )
+                try:
+                    ticker_data = future.result()
+                except Exception as exc:
+                    logger.warning("Skipping %s: Yahoo fetch failed (%s)", asset, exc)
+                    not_found.append(asset)
+                    continue
+
+                if ticker_data is None:
+                    logger.warning("Skipping %s: no data returned from Yahoo fetch", asset)
+                    not_found.append(asset)
+                    continue
+
+                if ticker_data.empty:
+                    logger.warning("Skipping %s: Yahoo returned an empty dataset", asset)
+                    not_found.append(asset)
+                    continue
+
+                try:
+                    close_data = prepare_data(ticker_data, asset)
+                except (KeyError, TypeError, ValueError) as exc:
+                    logger.warning("Skipping %s: could not prepare ticker data (%s)", asset, exc)
+                    not_found.append(asset)
+                    continue
+
+                try:
+                    close_frame = _normalize_close_frame(close_data, asset)
+                except (KeyError, TypeError, ValueError) as exc:
+                    logger.warning("Skipping %s: malformed data after preparation (%s)", asset, exc)
+                    not_found.append(asset)
+                    continue
+                except Exception:
+                    logger.exception("Skipping %s: could not normalize prepared data", asset)
+                    not_found.append(asset)
+                    continue
+
+                if close_frame.empty:
+                    logger.warning("Skipping %s: malformed data after preparation", asset)
+                    not_found.append(asset)
+                    continue
+
+                close_frames.append(close_frame)
+
+    if not close_frames:
+        logger.error(
+            "No valid assets found for Yahoo portfolio request. requested_assets=%s failure_count=%s",
+            assets,
+            len(not_found),
+        )
+        raise ValueError("No valid assets found — portfolio is empty")
+
+    portfolio = _finalize_portfolio(close_frames)
+    logger.info("Not found assets: %s, %s", len(set(not_found)), sorted(set(not_found)))
+    return portfolio
+
+
+def get_one_ticker(asset, from_='3m', start_date=None, end_date=dt.now().date(), session=None, timeout=10):
+    _, data = _fetch_ticker_data(session, asset, from_, start_date, end_date, timeout)
+    return data
+
+
 def prepare_data(data, ticker):
     data = data.drop(['open', 'high', 'low', 'volume'], axis=1)
     data = data.rename(columns={"close": ticker})

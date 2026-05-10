@@ -1,0 +1,38 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "USD",
+          "symbol": "SPY",
+          "exchangeName": "NYQ",
+          "instrumentType": "ETF",
+          "firstTradeDate": 1030157400,
+          "regularMarketTime": 1704153600,
+          "gmtoffset": -18000,
+          "timezone": "EST",
+          "exchangeTimezoneName": "America/New_York",
+          "regularMarketPrice": 510.12,
+          "chartPreviousClose": 509.20,
+          "previousClose": 509.20,
+          "scale": 3,
+          "priceHint": 2,
+          "currentTradingPeriod": {},
+          "dataGranularity": "1d",
+          "range": "2d"
+        },
+        "timestamp": [1704067200, 1704153600],
+        "indicators": {
+          "quote": [
+            {
+              "open": [509.12, 510.00],
+              "close": [509.90, 510.85],
+              "volume": [53320000, 47890000]
+            }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}
