@@ -6,4 +6,5 @@ pytest
 bump2version
 setuptools
 pytest-cov
+coverage
 tox
