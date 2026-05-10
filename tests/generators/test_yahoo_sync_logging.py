@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 import requests
 
-from tests.utils.fixtures import yahoo_raw_response_data
+from tests.utils.fixtures import sample_ticker_frame, yahoo_raw_response_data
 import earningspy.generators.yahoo.time_series as time_series
 
 
@@ -21,19 +21,6 @@ class FakeResponse:
         if isinstance(self._payload, Exception):
             raise self._payload
         return self._payload
-
-
-def _sample_ticker_frame():
-    return pd.DataFrame(
-        {
-            'open': [100.0, 101.0],
-            'high': [101.0, 102.0],
-            'low': [99.0, 100.0],
-            'close': [100.5, 101.5],
-            'volume': [1000, 1100],
-        },
-        index=pd.to_datetime(['2024-01-02', '2024-01-03']),
-    ).rename_axis('Date')
 
 
 def test_get_one_ticker_logs_and_returns_none_on_request_exception(monkeypatch, caplog):
@@ -78,8 +65,8 @@ def test_get_one_ticker_logs_malformed_payload(monkeypatch, caplog):
     assert "Yahoo payload parsing failed for AAPL" in caplog.text
 
 
-def test_get_portfolio_skips_failed_ticker_and_keeps_valid_data(monkeypatch, caplog):
-    sample = _sample_ticker_frame()
+def test_get_portfolio_skips_failed_ticker_and_keeps_valid_data(sample_ticker_frame, monkeypatch, caplog):
+    sample = sample_ticker_frame
 
     def fake_get_one_ticker(asset, from_='3m', start_date=None, end_date=None, session=None, timeout=10):
         if asset == 'BAD':
@@ -97,8 +84,8 @@ def test_get_portfolio_skips_failed_ticker_and_keeps_valid_data(monkeypatch, cap
     assert "Skipping BAD: no data returned from Yahoo fetch" in caplog.text
 
 
-def test_get_portfolio_logs_progress(monkeypatch, caplog):
-    sample = _sample_ticker_frame()
+def test_get_portfolio_logs_progress(sample_ticker_frame, monkeypatch, caplog):
+    sample = sample_ticker_frame
 
     def fake_get_one_ticker(asset, from_='3m', start_date=None, end_date=None, session=None, timeout=10):
         return sample.copy()
@@ -115,8 +102,8 @@ def test_get_portfolio_logs_progress(monkeypatch, caplog):
     assert "Yahoo progress 2/2 (100%)" in caplog.text
 
 
-def test_get_portfolio_logs_malformed_data_skip(monkeypatch, caplog):
-    sample = _sample_ticker_frame()
+def test_get_portfolio_logs_malformed_data_skip(sample_ticker_frame, monkeypatch, caplog):
+    sample = sample_ticker_frame
     original_prepare_data = time_series.prepare_data
 
     def fake_get_one_ticker(asset, from_='3m', start_date=None, end_date=None, session=None, timeout=10):
@@ -255,8 +242,8 @@ def test_fetch_ticker_data_handles_unexpected_session_failure(monkeypatch, caplo
     assert 'Unexpected Yahoo request failure for AAPL' in caplog.text
 
 
-def test_get_portfolio_skips_asset_when_ticker_fetch_raises(monkeypatch, caplog):
-    sample = _sample_ticker_frame()
+def test_get_portfolio_skips_asset_when_ticker_fetch_raises(sample_ticker_frame, monkeypatch, caplog):
+    sample = sample_ticker_frame
 
     def fake_get_one_ticker(asset, from_='3m', start_date=None, end_date=None, session=None, timeout=10):
         if asset == 'BAD':
@@ -363,8 +350,8 @@ def test_prepare_data_raises_missing_column():
         time_series.prepare_data(frame, 'SPY')
 
 
-def test_get_portfolio_handles_unexpected_normalize_exception(monkeypatch, caplog):
-    sample = _sample_ticker_frame()
+def test_get_portfolio_handles_unexpected_normalize_exception(sample_ticker_frame, monkeypatch, caplog):
+    sample = sample_ticker_frame
 
     def fake_prepare_data(data, ticker):
         return sample.copy()

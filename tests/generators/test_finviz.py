@@ -1,10 +1,13 @@
 import pytest
 import numpy as np
+import earningspy.generators.finviz.data as finviz_data_module
 from earningspy.generators.finviz.data import (
     _get_screener_data,
     get_by_earnings_date,
     get_by_tickers,
 )
+from earningspy.generators.finviz.screener import Screener
+from tests.utils.fixtures import screener_mock_data
 
 EXPECTED_COLUMNS = [
     'Ticker', 'Company', 'Sector', 'Industry', 'Country', 'Market Cap',
@@ -44,6 +47,17 @@ def _assert_row_nan_threshold(data, max_ratio=MAX_ROW_NAN_RATIO, top_k=10):
             f"Found {len(bad)} rows with NaN ratio > {max_ratio:.0%}. "
             f"Showing worst {min(top_k, len(bad))} rows:\n" + "\n".join(msg_lines)
         )
+
+
+@pytest.fixture(autouse=True)
+def mock_finviz_requests(monkeypatch):
+    mock_data = screener_mock_data()
+
+    def fake_init_from_url(*args, **kwargs):
+        return list(mock_data)
+
+    monkeypatch.setattr(Screener, 'init_from_url', fake_init_from_url)
+    monkeypatch.setattr(finviz_data_module.warnings, 'warn', lambda *args, **kwargs: None)
 
 
 @pytest.mark.parametrize("filters", [

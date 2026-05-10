@@ -1,6 +1,7 @@
 import os
 import json
 import pytest
+import pandas as pd
 
 
 def screener_mock_data():
@@ -10,6 +11,20 @@ def screener_mock_data():
     with open(json_path, 'r') as f:
         data = json.load(f)
     return data
+
+
+@pytest.fixture
+def sample_ticker_frame():
+    return pd.DataFrame(
+        {
+            'open': [100.0, 101.0],
+            'high': [101.0, 102.0],
+            'low': [99.0, 100.0],
+            'close': [100.5, 101.5],
+            'volume': [1000, 1100],
+        },
+        index=pd.to_datetime(['2024-01-02', '2024-01-03']),
+    ).rename_axis('Date')
 
 
 def yahoo_raw_response_data():
