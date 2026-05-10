@@ -10,8 +10,7 @@ from user_agent import generate_user_agent
 import earningspy.generators.finviz.helper_functions.scraper_functions as scrape
 from earningspy.generators.finviz.helper_functions.display_functions import create_table_string
 from earningspy.generators.finviz.helper_functions.error_handling import InvalidTableType, NoResults
-from earningspy.generators.finviz.helper_functions.request_functions import (Connector,
-                                                       http_request_get,
+from earningspy.generators.finviz.helper_functions.request_functions import (http_request_get,
                                                        sequential_data_scrape)
 from earningspy.generators.finviz.helper_functions.save_data import export_to_csv, export_to_db
 
@@ -30,7 +29,7 @@ class Screener(object):
     """ Used to download data from https://www.finviz.com/screener.ashx. """
 
     @classmethod
-    def init_from_url(cls, url, rows=None):
+    def init_from_url(cls, url, rows=None, session=None):
         """
         Initializes from url
 
@@ -38,38 +37,46 @@ class Screener(object):
         :type url: string
         :param rows: total number of rows to get
         :type rows: int
+        :param session: optional requests.Session for connection pooling
+        :type session: requests.Session
         """
 
-        split_query = urlparse_qs(urlparse(url).query)
+        url_params = urlparse_qs(urlparse(url).query)
 
-        tickers = split_query["t"][0].split(",") if "t" in split_query else None
-        filters = split_query["f"][0].split(",") if "f" in split_query else None
-        custom = split_query["c"][0].split(",") if "c" in split_query else None
-        order = split_query["o"][0] if "o" in split_query else ""
-        signal = split_query["s"][0] if "s" in split_query else ""
+        ticker_list = url_params.get("t", [None])[0]
+        tickers = ticker_list.split(",") if ticker_list else None
+
+        filter_list = url_params.get("f", [None])[0]
+        filters = filter_list.split(",") if filter_list else None
+
+        custom_list = url_params.get("c", [None])[0]
+        custom_columns = custom_list.split(",") if custom_list else None
+
+        sort_order = url_params.get("o", [""])[0]
+        signal_filter = url_params.get("s", [""])[0]
 
         table = "Overview"
-        if "v" in split_query:
-            table_numbers_types = {v: k for k, v in TABLE_TYPES.items()}
-            table_number_string = split_query["v"][0][0:3]
+        if "v" in url_params:
+            table_type_codes = {value: key for key, value in TABLE_TYPES.items()}
+            table_code = url_params["v"][0][:3]
             try:
-                table = table_numbers_types[table_number_string]
+                table = table_type_codes[table_code]
             except KeyError:
-                raise InvalidTableType(split_query["v"][0])
+                raise InvalidTableType(url_params["v"][0])
 
-        return cls(tickers, filters, rows, order, signal, table, custom)
+        return cls(tickers, filters, rows, sort_order, signal_filter, table, custom_columns, session=session)
 
     def __init__(
         self,
         tickers=None,
         filters=None,
         rows=None,
-        order="",
-        signal="",
-        table=None,
-        custom=None,
+        sort_order="",
+        signal_filter="",
+        table_type=None,
+        custom_columns=None,
         user_agent=generate_user_agent(),
-        request_method="sequential",
+        session=None,
     ):
         """
         Initializes all variables to its values
@@ -80,14 +87,14 @@ class Screener(object):
         :type filters: list
         :param rows: total number of rows to get
         :type rows: int
-        :param order: table order eg.: '-price' (to sort table by descending price)
-        :type order: str
-        :param signal: show by signal eg.: 'n_majornews' (for stocks with major news)
-        :type signal: str
-        :param table: table type eg.: 'Performance'
-        :type table: str
-        :param custom: collection of custom columns eg.: ['1', '21', '23', '45']
-        :type custom: list
+        :param sort_order: table sort order eg.: '-price' (to sort table by descending price)
+        :type sort_order: str
+        :param signal_filter: show by signal eg.: 'n_majornews' (for stocks with major news)
+        :type signal_filter: str
+        :param table_type: table type eg.: 'Performance'
+        :type table_type: str
+        :param custom_columns: collection of custom columns eg.: ['1', '21', '23', '45']
+        :type custom_columns: list
         :var self.data: list of dictionaries containing row data
         :type self.data: list
         """
@@ -102,16 +109,16 @@ class Screener(object):
         else:
             self._filters = filters
 
-        if table is None:
+        if table_type is None:
             self._table = "111"
         else:
-            self._table = self.__check_table(table)
+            self._table = self.__check_table(table_type)
 
-        if custom is None:
+        if custom_columns is None:
             self._custom = []
         else:
             self._table = "152"
-            self._custom = custom
+            self._custom = custom_columns
 
             if (
                 "0" not in self._custom
@@ -119,10 +126,10 @@ class Screener(object):
                 self._custom = ["0"] + self._custom
 
         self._rows = rows
-        self._order = order
-        self._signal = signal
+        self._order = sort_order
+        self._signal = signal_filter
         self._user_agent = user_agent
-        self._request_method = request_method
+        self._session = session
 
         self.analysis = []
         self.data = self.__search_screener()
@@ -132,10 +139,10 @@ class Screener(object):
         tickers=None,
         filters=None,
         rows=None,
-        order="",
-        signal="",
-        table=None,
-        custom=None,
+        sort_order="",
+        signal_filter="",
+        table_type=None,
+        custom_columns=None,
     ):
         """
         Adds more filters to the screener. Example usage:
@@ -153,20 +160,20 @@ class Screener(object):
         if filters:
             [self._filters.append(item) for item in filters]
 
-        if table:
-            self._table = self.__check_table(table)
+        if table_type:
+            self._table = self.__check_table(table_type)
 
-        if order:
-            self._order = order
+        if sort_order:
+            self._order = sort_order
 
-        if signal:
-            self._signal = signal
+        if signal_filter:
+            self._signal = signal_filter
 
         if rows:
             self._rows = rows
 
-        if custom:
-            self._custom = custom
+        if custom_columns:
+            self._custom = custom_columns
 
         self.analysis = []
         self.data = self.__search_screener()
@@ -447,6 +454,7 @@ class Screener(object):
 
         self._page_content, self._url = http_request_get(
             "https://finviz.com/screener.ashx",
+            session=self._session,
             payload={
                 "v": self._table,
                 "t": ",".join(self._tickers),
@@ -461,24 +469,14 @@ class Screener(object):
         self._rows = self.__check_rows()
         self.headers = self.__get_table_headers()
 
-        if self._request_method == "async":
-            async_connector = Connector(
-                scrape.get_table,
-                scrape.get_page_urls(self._page_content, self._rows, self._url),
-                self._user_agent,
-                self.headers,
-                self._rows,
-                css_select=True,
-            )
-            pages_data = async_connector.run_connector()
-        else:
-            pages_data = sequential_data_scrape(
-                scrape.get_table,
-                scrape.get_page_urls(self._page_content, self._rows, self._url),
-                self._user_agent,
-                self.headers,
-                self._rows,
-            )
+        pages_data = sequential_data_scrape(
+            scrape.get_table,
+            scrape.get_page_urls(self._page_content, self._rows, self._url),
+            self._user_agent,
+            self.headers,
+            self._rows,
+            session=self._session,
+        )
 
         data = []
         for page in pages_data:

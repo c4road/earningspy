@@ -4,6 +4,39 @@ CUSTOM_TABLE_FIELDS_ON_URL = """&c=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,1
 FINVIZ_DROP_COLUMNS = ["Earnings", "52W Range", "Return% 1Y", "Index", "52W High", "52W Low"]
 
 
+# Scraping selectors and patterns - easily update these when Finviz changes their HTML
+SCRAPING_SELECTORS = {
+    # Table row selectors
+    'table_rows': 'tr[valign="top"]',
+    'table_headers': 'tr[valign="middle"] th',
+    
+    # Pagination selectors
+    'page_options': 'option[value="1"]',
+    
+    # Analyst ratings table
+    'analyst_ratings_table': 'table[class="fullview-ratings-outer"]',
+    
+    # Total rows patterns (for fallback parsing)
+    'total_rows_patterns': [
+        ('class="count-text whitespace-nowrap">#1 / ', ' Total</div>'),
+        ('class="count-text">#1 / ', ' Total</td>')
+    ],
+    
+    # Ticker details selectors (add more as needed)
+    'ticker_details_rows': 'tr[valign="top"]',  # placeholder
+}
+
+# Headers for requests to avoid anti-scraping
+FINVIZ_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+}
+
+
 CUSTOM_TABLE_ALL_FIELDS_NEW = [
     'Ticker',
     'Company',
