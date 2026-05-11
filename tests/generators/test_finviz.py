@@ -65,7 +65,7 @@ def mock_finviz_requests(monkeypatch):
 ])
 def test_get_screener_data(filters):
     print(f"Testing filter: {filters}")
-    data = _get_screener_data(filters=filters, order='marketcap')
+    data = _get_screener_data(filter_string=filters, sort_column='marketcap')
 
     assert data.columns.tolist() == EXPECTED_COLUMNS, "DataFrame columns do not match expected columns"
     assert not data.empty, "DataFrame should not be empty"

@@ -1,9 +1,14 @@
 import datetime
+import logging
 import os
 import time
 
 import requests
 from lxml import etree, html
+
+from earningspy.generators.finviz.constants import SCRAPING_SELECTORS
+
+logger = logging.getLogger(__name__)
 
 
 def get_table(page_html: requests.Response, headers, rows=None, **kwargs):
@@ -12,6 +17,9 @@ def get_table(page_html: requests.Response, headers, rows=None, **kwargs):
         page_parsed = html.fromstring(page_html)
     else:
         page_parsed = html.fromstring(page_html.text)
+    
+    logger.debug(f"Parsing table from page content (length: {len(page_html.text if hasattr(page_html, 'text') else page_html)})")
+    
     # When we call this method from Portfolio we don't fill the rows argument.
     # Conversely, we always fill the rows argument when we call this method from Screener.
     # Also, in the portfolio page, we don't need the last row - it's redundant.
@@ -22,9 +30,17 @@ def get_table(page_html: requests.Response, headers, rows=None, **kwargs):
     # Select the HTML of the rows and append each column text to a list
     all_rows = [
         column.xpath("td//text()")
-        for column in page_parsed.cssselect('tr[valign="top"]')
+        for column in page_parsed.cssselect(SCRAPING_SELECTORS['table_rows'])
     ]
-
+    
+    logger.debug(f"Found {len(all_rows)} table rows using selector '{SCRAPING_SELECTORS['table_rows']}'")
+    if not all_rows:
+        logger.warning(f"No table rows found with selector '{SCRAPING_SELECTORS['table_rows']}'. Finviz may have changed their HTML structure.")
+        # Log some debug info about the page structure
+        body = page_parsed.cssselect('body')
+        if body:
+            logger.debug(f"Page body contains: {body[0].text_content()[:500]}...")
+    
     # If rows is different from -2, this function is called from Screener
     if rows != -2:
         for row_number, row_data in enumerate(all_rows, 1):
@@ -35,39 +51,51 @@ def get_table(page_html: requests.Response, headers, rows=None, **kwargs):
         # Zip each row values to the headers and append them to data_sets
         [data_sets.append(dict(zip(headers, row))) for row in all_rows]
 
+    logger.debug(f"Extracted {len(data_sets)} data rows from table")
     return data_sets
 
 
 def get_total_rows(page_content):
     """ Returns the total number of rows(results). """
-
-    options=[('class="count-text whitespace-nowrap">#1 / ',' Total</div>'),('class="count-text">#1 / ',' Total</td>')]
+    logger.debug("Extracting total rows from page content")
+    
     page_text = str(html.tostring(page_content))
-    for option_beg,option_end in options:
+    for option_beg, option_end in SCRAPING_SELECTORS['total_rows_patterns']:
         if option_beg in page_text:
             total_number = page_text.split(option_beg)[1].split(option_end)[0]
             try:
-                return int(total_number)
+                total = int(total_number)
+                logger.debug(f"Found total rows: {total} using pattern '{option_beg}'")
+                return total
             except ValueError:
+                logger.warning(f"Failed to parse total rows number '{total_number}' from pattern '{option_beg}'")
                 return 0
+    
+    logger.warning("No total rows pattern matched. Finviz may have changed their pagination HTML.")
+    logger.debug(f"Page text snippet around pagination: {page_text[page_text.find('count-text'):page_text.find('count-text')+200] if 'count-text' in page_text else 'No count-text found'}")
     return 0
 
 
 def get_page_urls(page_content, rows, url):
     """ Returns a list containing all of the page URL addresses. """
-
-    total_pages = int(
-        [i.text.split("/")[1] for i in page_content.cssselect('option[value="1"]')][0]
-    )
+    logger.debug(f"Extracting page URLs for {rows} rows")
+    
+    page_options = page_content.cssselect(SCRAPING_SELECTORS['page_options'])
+    if not page_options:
+        logger.warning(f"No page options found with selector '{SCRAPING_SELECTORS['page_options']}'. Finviz may have changed pagination.")
+        return [url]  # fallback to single page
+    
+    total_pages = int(page_options[0].text.split("/")[1])
+    logger.debug(f"Found {total_pages} total pages")
+    
     urls = []
-
     for page_number in range(1, total_pages + 1):
         sequence = 1 + (page_number - 1) * 20
-
         if sequence - 20 <= rows < sequence:
             break
         urls.append(url + f"&r={str(sequence)}")
 
+    logger.debug(f"Generated {len(urls)} page URLs")
     return urls
 
 
@@ -86,14 +114,22 @@ def get_analyst_price_targets_for_export(
     ticker=None, page_content=None, last_ratings=5
 ):
     analyst_price_targets = []
+    logger.debug(f"Extracting analyst ratings for {ticker}")
 
     try:
-        table = page_content.cssselect('table[class="fullview-ratings-outer"]')[0]
+        table = page_content.cssselect(SCRAPING_SELECTORS['analyst_ratings_table'])
+        if not table:
+            logger.warning(f"No analyst ratings table found with selector '{SCRAPING_SELECTORS['analyst_ratings_table']}' for {ticker}")
+            return analyst_price_targets
+        
+        table = table[0]
         ratings_list = [row.xpath("td//text()") for row in table]
         ratings_list = [
             [val for val in row if val != "\n"] for row in ratings_list
         ]  # remove new line entries
 
+        logger.debug(f"Found {len(ratings_list)} analyst rating rows for {ticker}")
+        
         headers = [
             "ticker",
             "date",
@@ -136,8 +172,10 @@ def get_analyst_price_targets_for_export(
             data = dict(zip(headers, elements))
             analyst_price_targets.append(data)
             count += 1
-    except Exception:
-        pass
+            
+        logger.debug(f"Extracted {len(analyst_price_targets)} analyst ratings for {ticker}")
+    except Exception as e:
+        logger.warning(f"Failed to extract analyst ratings for {ticker}: {e}")
 
     return analyst_price_targets
 
