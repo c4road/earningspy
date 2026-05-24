@@ -200,7 +200,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
                               (storage[DAYS_TO_EARNINGS_KEY_CAPITAL] <= future_threshold_days)].copy()
             
         else:
-            storage = storage[(storage[DAYS_TO_EARNINGS_KEY_CAPITAL] < -1) & 
+            storage = storage[(storage[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -1) & 
                               (storage[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -past_threshold_days)].copy()
 
         if storage.empty:
