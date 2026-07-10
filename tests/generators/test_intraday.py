@@ -404,7 +404,7 @@ def test_intraday_prices_rounded_to_2dp(sample_intraday_payload):
 
 
 def test_intraday_volume_is_int(sample_intraday_payload):
-    """Test that volume is stored as integer."""
+    """Test that volume is stored as nullable integer."""
     with patch("earningspy.generators.yahoo.intraday.requests.get") as mock_get:
         mock_response = MagicMock()
         mock_response.ok = True
@@ -414,7 +414,32 @@ def test_intraday_volume_is_int(sample_intraday_payload):
         result = get_one_ticker_intraday("HELE", interval="5m")
 
         assert result is not None
-        assert result["volume"].dtype == "int64"
+        # Int64 is nullable integer, handles NaN for bars with no trades
+        assert result["volume"].dtype == "Int64"
+
+
+def test_intraday_volume_handles_nan(sample_intraday_payload):
+    """Test that NaN volume (no trades on bar) is preserved, not crashing."""
+    with patch("earningspy.generators.yahoo.intraday.requests.get") as mock_get:
+        # Create payload with a NaN volume (some bars have no trades)
+        payload = sample_intraday_payload.copy()
+        payload["chart"]["result"][0]["indicators"]["quote"][0]["volume"][1] = None  # Second bar has no volume
+
+        mock_response = MagicMock()
+        mock_response.ok = True
+        mock_response.json.return_value = payload
+        mock_get.return_value = mock_response
+
+        # Should not crash; NaN volumes should be preserved as <NA>
+        result = get_one_ticker_intraday("HELE", interval="5m")
+
+        assert result is not None
+        assert result["volume"].dtype == "Int64"
+        # Second bar should have <NA> (pandas' representation of null in Int64)
+        assert pd.isna(result["volume"].iloc[1])
+        # Other bars should have valid volumes
+        assert result["volume"].iloc[0] > 0
+        assert result["volume"].iloc[2] > 0
 
 
 # ============================================================================
