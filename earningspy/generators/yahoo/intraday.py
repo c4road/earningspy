@@ -261,11 +261,11 @@ def get_one_ticker_intraday(
     ohlcv_cols = [col for col in ["open", "high", "low", "close", "volume"] if col in data.columns]
     data = data[ohlcv_cols]
     
-    # Round price columns; volume is int
+    # Round price columns; volume is nullable int (NaN for bars with no trades)
     price_cols = [col for col in ["open", "high", "low", "close"] if col in data.columns]
     data[price_cols] = data[price_cols].round(2)
     if "volume" in data.columns:
-        data["volume"] = data["volume"].astype("int64")
+        data["volume"] = data["volume"].astype("Int64")
     
     result_data = data
     logger.info(
