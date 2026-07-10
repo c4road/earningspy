@@ -9,6 +9,7 @@ from the daily time_series module.
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime as dt, timedelta
+from typing import Optional, Union, Dict
 
 import pandas as pd
 import requests
@@ -43,13 +44,13 @@ def get_one_ticker_intraday(
     asset: str,
     interval: str = "5m",
     *,
-    lookback_days: int | None = None,
-    range_: str | None = None,
+    lookback_days: Optional[int] = None,
+    range_: Optional[str] = None,
     include_prepost: bool = False,
     end_date=None,
     session=None,
     timeout: int = 10,
-) -> pd.DataFrame | None:
+) -> Optional[pd.DataFrame]:
     """
     Fetch INTRADAY OHLCV bars for one ticker from the Yahoo v8 chart API.
 
@@ -73,11 +74,11 @@ def get_one_ticker_intraday(
         Ticker symbol, e.g. 'HELE'.
     interval : str
         One of VALID_INTRADAY_INTERVALS. Default '5m'.
-    lookback_days : int | None
+    lookback_days : Optional[int]
         How many days back to request via period1/period2. If None, defaults to
         the interval's cap. Values above the cap are clamped (a warning is logged).
         Ignored if range_ is given.
-    range_ : str | None
+    range_ : Optional[str]
         Optional Yahoo 'range' value ('1d','5d',...) used INSTEAD of
         period1/period2. When set, lookback_days is ignored. Prefer range_='1d'
         or '5d' for "today / this week" intraday pulls.
@@ -92,7 +93,7 @@ def get_one_ticker_intraday(
 
     Returns
     -------
-    pd.DataFrame | None
+    Optional[pd.DataFrame]
         DataFrame with DatetimeIndex (intraday resolution, not normalized to
         midnight) and columns [open, high, low, close, volume]. None if fetch
         or parse fails.
@@ -280,14 +281,14 @@ def get_portfolio_intraday(
     assets,
     interval: str = "5m",
     *,
-    lookback_days: int | None = None,
-    range_: str | None = None,
+    lookback_days: Optional[int] = None,
+    range_: Optional[str] = None,
     include_prepost: bool = False,
     field: str = "close",
     end_date=None,
     timeout: int = 10,
     max_workers: int = 10,
-) -> pd.DataFrame | dict[str, pd.DataFrame]:
+) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
     """
     Fetch INTRADAY data for many tickers concurrently.
 
@@ -310,10 +311,10 @@ def get_portfolio_intraday(
         Iterable of ticker symbols.
     interval : str
         One of VALID_INTRADAY_INTERVALS. Default '5m'.
-    lookback_days : int | None
+    lookback_days : Optional[int]
         How many days back to request. If None, defaults to the interval's cap.
         Values above the cap are clamped.
-    range_ : str | None
+    range_ : Optional[str]
         Optional Yahoo 'range' value. When set, lookback_days is ignored.
     include_prepost : bool
         Include pre/after-hours bars. Default False.
@@ -328,7 +329,7 @@ def get_portfolio_intraday(
 
     Returns
     -------
-    pd.DataFrame | dict[str, pd.DataFrame]
+    Union[pd.DataFrame, Dict[str, pd.DataFrame]]
         If field='close': wide DataFrame with one close column per ticker.
         If field='ohlcv': dict mapping ticker -> OHLCV DataFrame.
 
