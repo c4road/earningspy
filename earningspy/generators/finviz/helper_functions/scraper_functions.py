@@ -27,12 +27,17 @@ def get_table(page_html: requests.Response, headers, rows=None, **kwargs):
         rows = -2  # We'll increment it later (-1) and use it to cut the last row
 
     data_sets = []
+
+    def _cell_value(td):
+        frags = [text.strip() for text in td.xpath('.//text()') if text.strip()]
+        return frags[-1] if frags else ''
+
     # Select the HTML of the rows and append each column text to a list
     all_rows = [
-        column.xpath("td//text()")
+        [_cell_value(td) for td in column.xpath('td')]
         for column in page_parsed.cssselect(SCRAPING_SELECTORS['table_rows'])
     ]
-    
+
     logger.debug(f"Found {len(all_rows)} table rows using selector '{SCRAPING_SELECTORS['table_rows']}'")
     if not all_rows:
         logger.warning(f"No table rows found with selector '{SCRAPING_SELECTORS['table_rows']}'. Finviz may have changed their HTML structure.")
@@ -40,7 +45,19 @@ def get_table(page_html: requests.Response, headers, rows=None, **kwargs):
         body = page_parsed.cssselect('body')
         if body:
             logger.debug(f"Page body contains: {body[0].text_content()[:500]}...")
-    
+
+    if all_rows:
+        n_headers = len(headers)
+        bad = [(i, len(r)) for i, r in enumerate(all_rows) if len(r) != n_headers]
+        if bad:
+            raise ValueError(
+                f"Finviz column-count mismatch: header row has {n_headers} columns but "
+                f"{len(bad)} data row(s) differ (e.g. row {bad[0][0]} has {bad[0][1]}). "
+                f"Finviz likely changed the table HTML (inline markup splitting a cell's "
+                f"text nodes, or an added/removed column). Fix get_table's cell extraction "
+                f"or the &c= column config before trusting the data."
+            )
+
     # If rows is different from -2, this function is called from Screener
     if rows != -2:
         for row_number, row_data in enumerate(all_rows, 1):
