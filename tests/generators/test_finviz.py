@@ -6,6 +6,7 @@ from earningspy.generators.finviz.data import (
     get_by_earnings_date,
     get_by_tickers,
 )
+from earningspy.generators.finviz.helper_functions.scraper_functions import get_table
 from earningspy.generators.finviz.screener import Screener
 from tests.utils.fixtures import screener_mock_data
 
@@ -94,3 +95,56 @@ def test_get_by_tickers():
     assert not data.empty, "DataFrame should not be empty"
 
     _assert_row_nan_threshold(data)
+
+
+def test_get_table_uses_last_text_fragment_per_cell():
+    headers = ['Ticker', 'Price', 'Prev Close', 'P/E', 'Beta']
+    page_html = """
+    <html><body>
+    <table>
+        <tr>
+            <th>Ticker</th><th>Price</th><th>Prev Close</th><th>P/E</th><th>Beta</th>
+        </tr>
+        <tr valign="top">
+            <td><span>G</span>GOOGL</td>
+            <td>346.77</td>
+            <td>354.46</td>
+            <td>26.45</td>
+            <td>1.24</td>
+        </tr>
+    </table>
+    </body></html>
+    """
+
+    rows = get_table(page_html, headers)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert len(row) == len(headers)
+    assert row['Ticker'] == 'GOOGL'
+    assert row['Price'] == '346.77'
+    assert row['Prev Close'] == '354.46'
+    assert row['P/E'] == '26.45'
+    assert row['Beta'] == '1.24'
+
+
+def test_get_table_guardrail_raises_on_row_cell_mismatch():
+    headers = ['Ticker', 'Price', 'Prev Close', 'P/E', 'Beta']
+    page_html = """
+    <html><body>
+    <table>
+        <tr>
+            <th>Ticker</th><th>Price</th><th>Prev Close</th><th>P/E</th><th>Beta</th>
+        </tr>
+        <tr valign="top">
+            <td><span>G</span>GOOGL</td>
+            <td>346.77</td>
+            <td>354.46</td>
+            <td>26.45</td>
+        </tr>
+    </table>
+    </body></html>
+    """
+
+    with pytest.raises(ValueError, match='Finviz column-count mismatch'):
+        get_table(page_html, headers)
