@@ -33,6 +33,11 @@ Homepage = "https://github.com/c4road/earningspy"
 [tool.setuptools.packages.find]
 exclude = ["tests", "docs", "notebooks"]
 
+# Ship non-Python data files that live inside the package (e.g. the Finviz field
+# spec doc and filter catalog) in both the wheel and the sdist.
+[tool.setuptools.package-data]
+"earningspy.generators.finviz" = ["FINVIZ_FIELDS.md", "filters.json"]
+
 # Automatically load dependencies from requirements.txt
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
