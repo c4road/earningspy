@@ -103,6 +103,124 @@ def test_descriptions_map_has_no_orphans():
 
 
 # ---------------------------------------------------------------------------
+# Update cadence (which fields are live vs frozen)
+# ---------------------------------------------------------------------------
+def test_every_field_has_a_cadence():
+    from earningspy.generators.finviz.field_spec import Cadence
+    valid = {v for k, v in vars(Cadence).items() if not k.startswith("_")}
+    missing = [fs.name for fs in FIELD_SPECS if fs.cadence is None]
+    assert not missing, f"fields missing an update cadence: {missing}"
+    bad = [(fs.name, fs.cadence) for fs in FIELD_SPECS if fs.cadence not in valid]
+    assert not bad, f"fields with an invalid cadence value: {bad}"
+
+
+def test_every_field_has_cadence_confidence():
+    bad = [fs.name for fs in FIELD_SPECS
+           if fs.cadence_confidence not in ("high", "med")]
+    assert not bad, f"fields with missing/invalid cadence confidence: {bad}"
+
+
+def test_cadence_map_has_no_orphans():
+    from earningspy.generators.finviz.field_spec import CADENCE
+    orphans = set(CADENCE) - {fs.name for fs in FIELD_SPECS}
+    assert not orphans, f"CADENCE has entries for unknown fields: {orphans}"
+
+
+def test_frozen_set_is_report_frozen_and_high_confidence():
+    """The 'frozen at earnings' set the catalog owner wants to rely on must be
+    classified REPORT_FROZEN with high confidence. Locks in the specific fields
+    so a future edit can't silently reclassify a frozen fundamental as live."""
+    from earningspy.generators.finviz.field_spec import Cadence
+    expected_frozen = {
+        "EPS", "EPS Past 5Y", "EPS Q/Q", "EPS YoY TTM", "EPS Surprise",
+        "Sales", "Sales Past 5Y", "Sales Q/Q", "Sales YoY TTM", "Income",
+        "Revenue Surprise", "ROA", "ROE", "ROIC", "Curr R", "Quick R",
+        "LTDebt/Eq", "Debt/Eq", "Gross M", "Oper M", "Profit M",
+        "Book/sh", "Cash/sh", "Payout Ratio",
+    }
+    for name in expected_frozen:
+        fs = BY_NAME[name]
+        assert fs.cadence == Cadence.REPORT_FROZEN, (
+            f"{name} expected report_frozen, got {fs.cadence}"
+        )
+        assert fs.cadence_confidence == "high", (
+            f"{name} is report_frozen but not high confidence"
+        )
+        assert fs.is_frozen
+
+
+def test_price_bearing_ratios_are_not_report_frozen():
+    """Guard the subtle trap: ratios that contain live price must NOT be labeled
+    frozen, because they drift every day even though the fundamental is frozen."""
+    from earningspy.generators.finviz.field_spec import Cadence
+    for name in ("P/E", "P/S", "P/B", "P/FCF", "EV/EBITDA", "Dividend"):
+        assert BY_NAME[name].cadence == Cadence.PRICE_OVER_FUNDAMENTAL, name
+        assert not BY_NAME[name].is_frozen
+
+
+def test_periodic_filing_fields_not_frozen_or_daily():
+    """Ownership/short-interest fields follow their own regulatory cadence, so
+    they are neither report_frozen nor market_daily."""
+    from earningspy.generators.finviz.field_spec import Cadence
+    for name in ("Inst Own", "Inst Trans", "Insider Own", "Insider Trans",
+                 "Short Float", "Short Ratio", "Short Interest"):
+        assert BY_NAME[name].cadence == Cadence.FILING_PERIODIC, name
+
+
+# ---------------------------------------------------------------------------
+# Serving decision (snapshot vs on-demand) for the pre-earnings model
+# ---------------------------------------------------------------------------
+def test_every_field_has_a_serving_decision():
+    from earningspy.generators.finviz.field_spec import Serving
+    valid = {v for k, v in vars(Serving).items() if not k.startswith("_")}
+    bad = [(fs.name, fs.serving) for fs in FIELD_SPECS if fs.serving not in valid]
+    assert not bad, f"fields with missing/invalid serving decision: {bad}"
+
+
+def test_serving_is_consistent_with_cadence():
+    """Serving is derived from cadence, so it must equal serving_for(cadence) for
+    every field — the two axes can never contradict."""
+    from earningspy.generators.finviz.field_spec import serving_for
+    for fs in FIELD_SPECS:
+        assert fs.serving == serving_for(fs.cadence), (
+            f"{fs.name}: serving {fs.serving} inconsistent with cadence {fs.cadence}"
+        )
+
+
+def test_frozen_fundamentals_are_served_from_snapshot():
+    """The whole point: filing-reported fundamentals must be serve_from_snapshot
+    (a 1-5 day pre-earnings lag is negligible for them)."""
+    from earningspy.generators.finviz.field_spec import Serving
+    for name in ("EPS", "Sales", "Income", "ROE", "ROIC", "Gross M", "Oper M",
+                 "Profit M", "Debt/Eq", "Book/sh", "EPS Surprise"):
+        assert BY_NAME[name].serving == Serving.FROM_SNAPSHOT, name
+
+
+def test_price_bearing_ratios_are_stale_recompute():
+    """Price-bearing ratios must be flagged stale_recompute, NOT plain snapshot:
+    the fundamental is fine but the embedded price goes stale within days."""
+    from earningspy.generators.finviz.field_spec import Serving
+    for name in ("P/E", "P/S", "P/B", "P/FCF", "EV/EBITDA", "EV/Sales", "Dividend"):
+        assert BY_NAME[name].serving == Serving.STALE_RECOMPUTE, name
+
+
+def test_pure_market_fields_are_fetch_on_demand():
+    """Pure price/technical fields are noise from a days-old snapshot -> on demand."""
+    from earningspy.generators.finviz.field_spec import Serving
+    for name in ("Price", "Change", "RSI", "SMA50", "52W High", "ATR",
+                 "Perf Week", "Volume", "Market Cap"):
+        assert BY_NAME[name].serving == Serving.ON_DEMAND, name
+
+
+def test_ownership_and_short_are_served_from_snapshot():
+    """Ownership/short update on multi-week regulatory cadences, so a 1-5 day-old
+    snapshot is essentially always current -> serve from snapshot."""
+    from earningspy.generators.finviz.field_spec import Serving
+    for name in ("Inst Own", "Insider Own", "Short Float", "Short Interest"):
+        assert BY_NAME[name].serving == Serving.FROM_SNAPSHOT, name
+
+
+# ---------------------------------------------------------------------------
 # Spec <-> Finviz URL codes  (the mapping the user cares about)
 # ---------------------------------------------------------------------------
 def test_finviz_codes_match_url_positionally():

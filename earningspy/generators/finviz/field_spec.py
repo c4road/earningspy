@@ -55,6 +55,70 @@ class Kind:
     TEXT = "text"
 
 
+class Cadence:
+    """How often a field's value changes / is refreshed. This is about the
+    *driver* of change, which determines whether a value is 'live' or 'frozen'
+    between events.
+    """
+    # Recomputed every trading session because it contains live market price
+    # (or is a pure market/technical value). Effectively daily.
+    MARKET_DAILY = "market_daily"
+    # A ratio whose fundamental input is frozen to the last report BUT whose
+    # value still moves every day because PRICE is in the numerator/denominator
+    # (e.g. P/E, P/S, dividend yield, EV multiples). Drifts daily; "resets" at
+    # earnings when the fundamental updates.
+    PRICE_OVER_FUNDAMENTAL = "price_over_fundamental"
+    # Frozen between quarterly/annual financial reports. Only changes when the
+    # company files new financials (10-Q/10-K) — the classic "frozen at earnings".
+    REPORT_FROZEN = "report_frozen"
+    # Analyst-driven: revised by analysts on no fixed schedule (any day), tends
+    # to cluster around earnings but is NOT frozen to it. Estimates/targets/ratings.
+    ESTIMATE_DRIVEN = "estimate_driven"
+    # Regulatory filing cadence, NOT earnings: institutional 13F (quarterly,
+    # ~45-day lag), insider Form 4 (event-driven, ~2-day lag), short interest
+    # (bi-monthly, ~7-business-day lag).
+    FILING_PERIODIC = "filing_periodic"
+    # Essentially static (identifiers, sector) — changes rarely, if ever.
+    STATIC = "static"
+
+
+class Serving:
+    """Operational serving decision for the pre-earnings snapshot model.
+
+    Context: the snapshot is scraped ONCE per stock, 1-5 days before that stock's
+    earnings, and stored. A client request may arrive later. The question each
+    field must answer is: *can I serve the stored value, or must I re-fetch?*
+    over that ~1-5 day (up to weekly) staleness window.
+    """
+    # Value is stable over a 1-5 day window (frozen fundamentals, multi-week
+    # filing cadences, static identifiers). Serve the stored snapshot directly.
+    FROM_SNAPSHOT = "serve_from_snapshot"
+    # The fundamental part is fine from the snapshot, but the value embeds live
+    # PRICE and is therefore stale within days. Serve stored, but recompute the
+    # price component (or re-fetch) before presenting it as current.
+    STALE_RECOMPUTE = "serve_stale_recompute"
+    # Moves materially day-to-day (pure market/technical). The stored snapshot is
+    # noise by the time it is served — fetch on demand.
+    ON_DEMAND = "fetch_on_demand"
+
+
+# Cadence -> default serving decision. The serving column is DERIVED from cadence
+# so the two never contradict each other.
+_CADENCE_TO_SERVING = {
+    Cadence.REPORT_FROZEN: Serving.FROM_SNAPSHOT,
+    Cadence.FILING_PERIODIC: Serving.FROM_SNAPSHOT,   # multi-week cadence >> 5d lag
+    Cadence.STATIC: Serving.FROM_SNAPSHOT,
+    Cadence.ESTIMATE_DRIVEN: Serving.FROM_SNAPSHOT,   # revised ad hoc, no price to recompute
+    Cadence.PRICE_OVER_FUNDAMENTAL: Serving.STALE_RECOMPUTE,
+    Cadence.MARKET_DAILY: Serving.ON_DEMAND,
+}
+
+
+def serving_for(cadence):
+    """Derive the serving decision from a cadence label."""
+    return _CADENCE_TO_SERVING.get(cadence)
+
+
 @dataclass(frozen=True)
 class FieldSpec:
     name: str                         # our internal column name (matches constants.py)
@@ -72,6 +136,30 @@ class FieldSpec:
         """Plain-language, client-facing description: what the value tells you and
         how it is composed. Sourced from DESCRIPTIONS below."""
         return DESCRIPTIONS.get(self.name, "")
+
+    @property
+    def cadence(self):
+        """Update-frequency class (see ``Cadence``). Sourced from CADENCE below."""
+        return CADENCE.get(self.name, (None, None))[0]
+
+    @property
+    def cadence_confidence(self):
+        """Confidence in the cadence classification: 'high' | 'med'. Higher bar is
+        applied to the REPORT_FROZEN set per the catalog owner's request."""
+        return CADENCE.get(self.name, (None, None))[1]
+
+    @property
+    def is_frozen(self):
+        """True if the value is frozen between financial reports (the classic
+        'frozen at earnings' set)."""
+        return self.cadence == Cadence.REPORT_FROZEN
+
+    @property
+    def serving(self):
+        """Operational serving decision (see ``Serving``), derived from cadence:
+        can the 1-5 day-old pre-earnings snapshot be served, or must the field be
+        re-fetched / price-recomputed on demand?"""
+        return serving_for(self.cadence)
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +284,138 @@ DESCRIPTIONS = {
     "Enterprise Value": "Total takeover value = market cap + debt - cash. Capital-structure-neutral size measure used in EV multiples.",
     "EV/EBITDA": "Enterprise value divided by EBITDA. Capital-structure-neutral valuation multiple; common for cross-company comparison.",
     "EV/Sales": "Enterprise value divided by revenue. EV-based valuation useful when margins/earnings are not comparable.",
+}
+
+
+# ---------------------------------------------------------------------------
+# Update cadence: (Cadence, confidence) per field. See the Cadence class.
+#
+# How this was determined (Finviz does not document per-field refresh rates):
+#   - MARKET_DAILY / PRICE_OVER_FUNDAMENTAL: deduced from the formula — anything
+#     containing live price necessarily moves every session. HIGH confidence.
+#   - REPORT_FROZEN: values sourced purely from filed financial statements; they
+#     cannot change until the next 10-Q/10-K. HIGH confidence (the set you want
+#     to rely on).
+#   - ESTIMATE_DRIVEN: analyst estimates/targets/ratings are revised ad hoc; not
+#     frozen to earnings, not strictly daily. MED confidence on exact timing.
+#   - FILING_PERIODIC: cross-checked against the actual regulatory schedules —
+#     13F quarterly / ~45-day lag, Form 4 ~2 business days, short interest
+#     bi-monthly / ~7 business-day lag (FINRA). HIGH on the mechanism, MED on the
+#     exact day Finviz ingests it.
+#   - STATIC: identifiers/classification. HIGH.
+#
+# Sources for the periodic ones: FINRA short-interest reporting (twice monthly,
+# disseminated 7 business days after settlement); SEC Form 13F (quarterly, 45-day
+# deadline); SEC Form 4 (within 2 business days of the transaction).
+# ---------------------------------------------------------------------------
+CADENCE = {
+    # identifiers / classification — static
+    "Ticker": (Cadence.STATIC, "high"),
+    "Company": (Cadence.STATIC, "high"),
+    "Sector": (Cadence.STATIC, "high"),
+    "Industry": (Cadence.STATIC, "high"),
+    "Country": (Cadence.STATIC, "high"),
+
+    # valuation ratios that contain PRICE -> drift every day, reset at earnings
+    "Market Cap": (Cadence.MARKET_DAILY, "high"),   # price x shares
+    "P/E": (Cadence.PRICE_OVER_FUNDAMENTAL, "high"),
+    "Forward P/E": (Cadence.PRICE_OVER_FUNDAMENTAL, "high"),  # price / forward EPS est
+    "PEG": (Cadence.PRICE_OVER_FUNDAMENTAL, "med"),  # P/E (price) over an estimate
+    "P/S": (Cadence.PRICE_OVER_FUNDAMENTAL, "high"),
+    "P/B": (Cadence.PRICE_OVER_FUNDAMENTAL, "high"),
+    "P/C": (Cadence.PRICE_OVER_FUNDAMENTAL, "high"),
+    "P/FCF": (Cadence.PRICE_OVER_FUNDAMENTAL, "high"),
+    "Enterprise Value": (Cadence.MARKET_DAILY, "high"),   # market cap + debt - cash
+    "EV/EBITDA": (Cadence.PRICE_OVER_FUNDAMENTAL, "high"),
+    "EV/Sales": (Cadence.PRICE_OVER_FUNDAMENTAL, "high"),
+    "Dividend": (Cadence.PRICE_OVER_FUNDAMENTAL, "high"),  # yield = payout / price
+
+    # dividends
+    "Payout Ratio": (Cadence.REPORT_FROZEN, "high"),      # dividends / earnings (filed)
+    "Dividend TTM": (Cadence.REPORT_FROZEN, "med"),       # trailing paid $, changes on declaration
+    "Dividend Ex Date": (Cadence.FILING_PERIODIC, "med"),  # set by dividend declarations
+
+    # EPS actuals & fundamentals — FROZEN at earnings
+    "EPS": (Cadence.REPORT_FROZEN, "high"),
+    "EPS Past 5Y": (Cadence.REPORT_FROZEN, "high"),
+    "EPS Q/Q": (Cadence.REPORT_FROZEN, "high"),
+    "EPS YoY TTM": (Cadence.REPORT_FROZEN, "high"),
+    "EPS Surprise": (Cadence.REPORT_FROZEN, "high"),      # fixed once the report lands
+    "Sales Past 5Y": (Cadence.REPORT_FROZEN, "high"),
+    "Sales Q/Q": (Cadence.REPORT_FROZEN, "high"),
+    "Sales YoY TTM": (Cadence.REPORT_FROZEN, "high"),
+    "Sales": (Cadence.REPORT_FROZEN, "high"),
+    "Income": (Cadence.REPORT_FROZEN, "high"),
+    "Revenue Surprise": (Cadence.REPORT_FROZEN, "high"),
+
+    # EPS ESTIMATES / growth-vs-estimates — analyst driven, not frozen to earnings
+    "EPS next Q": (Cadence.ESTIMATE_DRIVEN, "high"),
+    "EPS This Y": (Cadence.ESTIMATE_DRIVEN, "med"),  # this-FY growth uses FY estimate
+    "EPS Next Y": (Cadence.ESTIMATE_DRIVEN, "high"),
+    "EPS Next 5Y": (Cadence.ESTIMATE_DRIVEN, "high"),
+
+    # profitability & balance-sheet ratios from filed statements — FROZEN
+    "ROA": (Cadence.REPORT_FROZEN, "high"),
+    "ROE": (Cadence.REPORT_FROZEN, "high"),
+    "ROIC": (Cadence.REPORT_FROZEN, "high"),
+    "Curr R": (Cadence.REPORT_FROZEN, "high"),
+    "Quick R": (Cadence.REPORT_FROZEN, "high"),
+    "LTDebt/Eq": (Cadence.REPORT_FROZEN, "high"),
+    "Debt/Eq": (Cadence.REPORT_FROZEN, "high"),
+    "Gross M": (Cadence.REPORT_FROZEN, "high"),
+    "Oper M": (Cadence.REPORT_FROZEN, "high"),
+    "Profit M": (Cadence.REPORT_FROZEN, "high"),
+    "Book/sh": (Cadence.REPORT_FROZEN, "high"),
+    "Cash/sh": (Cadence.REPORT_FROZEN, "high"),
+    "Employees": (Cadence.REPORT_FROZEN, "med"),          # from filings, updated infrequently
+
+    # shares / ownership — regulatory filing cadences (NOT earnings, NOT daily)
+    "Outstanding": (Cadence.REPORT_FROZEN, "med"),        # updated on filings
+    "Float": (Cadence.REPORT_FROZEN, "med"),
+    "Float %": (Cadence.REPORT_FROZEN, "med"),
+    "Insider Own": (Cadence.FILING_PERIODIC, "high"),     # Form 4, ~2 business days
+    "Insider Trans": (Cadence.FILING_PERIODIC, "high"),
+    "Inst Own": (Cadence.FILING_PERIODIC, "high"),        # 13F, quarterly ~45-day lag
+    "Inst Trans": (Cadence.FILING_PERIODIC, "high"),
+    "Short Float": (Cadence.FILING_PERIODIC, "high"),     # FINRA, bi-monthly ~7 bd lag
+    "Short Ratio": (Cadence.FILING_PERIODIC, "high"),
+    "Short Interest": (Cadence.FILING_PERIODIC, "high"),
+
+    # performance / technicals — recomputed every session from price
+    "Perf Week": (Cadence.MARKET_DAILY, "high"),
+    "Perf Month": (Cadence.MARKET_DAILY, "high"),
+    "Perf Quart": (Cadence.MARKET_DAILY, "high"),
+    "Perf Half": (Cadence.MARKET_DAILY, "high"),
+    "Perf Year": (Cadence.MARKET_DAILY, "high"),
+    "Perf YTD": (Cadence.MARKET_DAILY, "high"),
+    "Beta": (Cadence.MARKET_DAILY, "med"),                # rolling regression on returns
+    "ATR": (Cadence.MARKET_DAILY, "high"),
+    "Volatility W": (Cadence.MARKET_DAILY, "high"),
+    "Volatility M": (Cadence.MARKET_DAILY, "high"),
+    "SMA20": (Cadence.MARKET_DAILY, "high"),
+    "SMA50": (Cadence.MARKET_DAILY, "high"),
+    "SMA200": (Cadence.MARKET_DAILY, "high"),
+    "52W High": (Cadence.MARKET_DAILY, "high"),
+    "52W Low": (Cadence.MARKET_DAILY, "high"),
+    "52W Range": (Cadence.MARKET_DAILY, "high"),
+    "RSI": (Cadence.MARKET_DAILY, "high"),
+    "Prev Close": (Cadence.MARKET_DAILY, "high"),
+    "Price": (Cadence.MARKET_DAILY, "high"),
+    "Change": (Cadence.MARKET_DAILY, "high"),
+    "Return% 1Y": (Cadence.MARKET_DAILY, "high"),
+    "Avg Volume": (Cadence.MARKET_DAILY, "high"),
+    "Rel Volume": (Cadence.MARKET_DAILY, "high"),
+    "Volume": (Cadence.MARKET_DAILY, "high"),
+
+    # analyst outputs — estimate driven
+    "Target Price": (Cadence.ESTIMATE_DRIVEN, "high"),
+    "Recom": (Cadence.ESTIMATE_DRIVEN, "high"),
+
+    # calendar / flags
+    "Earnings": (Cadence.ESTIMATE_DRIVEN, "med"),         # scheduled/estimated date, can shift
+    "Index": (Cadence.FILING_PERIODIC, "med"),            # index reconstitution
+    "Optionable": (Cadence.STATIC, "high"),
+    "Shortable": (Cadence.STATIC, "high"),
 }
 
 
@@ -408,17 +628,54 @@ def to_markdown():
         "**`Description`** is the plain-language, client-facing summary of what the "
         "value tells you and how it is composed.",
         "",
-        "| Finviz code | Field | Description | Kind | Unit | Period | Compare with | Src | Conf | Note |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "**Legend — `Serving`** (the operational decision for the pre-earnings "
+        "snapshot model: data is scraped once per stock 1-5 days before its "
+        "earnings and stored, so each field must say whether a stored value can be "
+        "served or must be re-fetched):",
+        "- `serve_from_snapshot` — stable over a 1-5 day (up to weekly) window; "
+        "serve the stored value. Covers filing-reported fundamentals, the "
+        "multi-week ownership/short cadences, analyst estimates, and static ids.",
+        "- `serve_stale_recompute` — the fundamental part is fine from the "
+        "snapshot, but the value embeds **live price** and goes stale within days; "
+        "serve stored only if you recompute the price component (or re-fetch).",
+        "- `fetch_on_demand` — moves materially day-to-day (pure price/technical); "
+        "the stored snapshot is noise by serving time, so fetch live.",
+        "",
+        "**Legend — `Update cadence`** (how often the value changes; Finviz does "
+        "not publish per-field refresh rates, so these are reasoned from the "
+        "formula/data source and cross-checked against regulatory schedules):",
+        "- `market_daily` — recomputed every trading session (pure price/technical).",
+        "- `price_over_fundamental` — a ratio whose fundamental input is frozen at "
+        "the last report, but the value still **drifts every day because price is "
+        "in it** (e.g. P/E, P/S, dividend yield); it 'resets' at earnings.",
+        "- `report_frozen` — **frozen between financial reports** (10-Q/10-K); the "
+        "classic 'frozen at earnings' set. Changes only when new financials are filed.",
+        "- `estimate_driven` — analyst estimates/targets/ratings, revised on no fixed "
+        "schedule; clusters around earnings but is not frozen to it.",
+        "- `filing_periodic` — regulatory filing cadence, **not** earnings: 13F "
+        "institutional (quarterly, ~45-day lag), Form 4 insider (~2 business days), "
+        "short interest (bi-monthly, ~7 business-day lag).",
+        "- `static` — identifiers/classification; changes rarely if ever.",
+        "",
+        "`Cad.conf` is the confidence in the cadence label (a higher bar was applied "
+        "to the `report_frozen` set, since that is the one intended for downstream "
+        "'frozen' logic).",
+        "",
+        "| Finviz code | Field | Description | Serving | Update cadence | Cad.conf | Kind | Unit | Period | Compare with | Src | Conf | Note |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for fs in FIELD_SPECS:
         code = "-" if fs.finviz_code is None else str(fs.finviz_code)
         cmp = ", ".join(comparable_to(fs.name)) or "-"
         note = fs.note.replace("|", "\\|")
         desc = fs.description.replace("|", "\\|")
+        serving = fs.serving or "-"
+        cadence = fs.cadence or "-"
+        cad_conf = fs.cadence_confidence or "-"
         lines.append(
-            f"| {code} | `{fs.name}` | {desc} | {fs.kind} | {fs.unit} | "
-            f"{fs.period or '-'} | {cmp} | {fs.source} | {fs.confidence} | {note} |"
+            f"| {code} | `{fs.name}` | {desc} | {serving} | {cadence} | {cad_conf} | "
+            f"{fs.kind} | {fs.unit} | {fs.period or '-'} | {cmp} | {fs.source} | "
+            f"{fs.confidence} | {note} |"
         )
     lines += [
         "",
