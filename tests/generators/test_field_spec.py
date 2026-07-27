@@ -87,6 +87,21 @@ def test_no_duplicate_field_names():
     assert len(names) == len(set(names)), "duplicate field name in FIELD_SPECS"
 
 
+def test_every_field_has_a_client_description():
+    """The catalog is client-facing: every fetched field must carry a non-empty,
+    plain-language description."""
+    missing = [fs.name for fs in FIELD_SPECS if not fs.description.strip()]
+    assert not missing, f"fields missing a client description: {missing}"
+
+
+def test_descriptions_map_has_no_orphans():
+    """Every entry in DESCRIPTIONS must correspond to a real fetched field, so the
+    map cannot drift out of sync with the spec."""
+    from earningspy.generators.finviz.field_spec import DESCRIPTIONS
+    orphans = set(DESCRIPTIONS) - {fs.name for fs in FIELD_SPECS}
+    assert not orphans, f"DESCRIPTIONS has entries for unknown fields: {orphans}"
+
+
 # ---------------------------------------------------------------------------
 # Spec <-> Finviz URL codes  (the mapping the user cares about)
 # ---------------------------------------------------------------------------

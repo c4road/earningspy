@@ -65,7 +65,13 @@ class FieldSpec:
     compare_group: Optional[str] = None
     source: str = "finviz"
     confidence: str = "high"
-    note: str = ""
+    note: str = ""                    # terse engineering caveat (misleading names, etc.)
+
+    @property
+    def description(self):
+        """Plain-language, client-facing description: what the value tells you and
+        how it is composed. Sourced from DESCRIPTIONS below."""
+        return DESCRIPTIONS.get(self.name, "")
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +82,122 @@ class FieldSpec:
 # eps_yoy       : year-over-year EPS growth (Q/Q [actually YoY] vs YoY TTM)
 # eps_level     : dollar EPS values (ttm actual vs next-Q estimate)
 # sales_growth_5y, sales_yoy, money_level, margins, returns_pct, ...
+
+# ---------------------------------------------------------------------------
+# Client-facing descriptions: for each field, what it tells you and how it is
+# composed. Kept in a name-keyed map so the FIELD_SPECS list stays compact; the
+# test suite asserts every fetched field has a non-empty description here.
+# ---------------------------------------------------------------------------
+DESCRIPTIONS = {
+    # --- identifiers ---
+    "Ticker": "Exchange ticker symbol identifying the security.",
+    "Company": "Legal/brand name of the company.",
+    "Sector": "Broad economic sector (e.g. Technology, Healthcare) for grouping and peer comparison.",
+    "Industry": "Finer-grained industry classification within the sector; used to build peer sets.",
+    "Country": "Country of the company's headquarters/domicile.",
+
+    # --- valuation ---
+    "Market Cap": "Total equity market value of the company = share price x shares outstanding. The primary size measure.",
+    "P/E": "Price-to-earnings: share price divided by trailing-12-month EPS. How many dollars investors pay per dollar of past earnings; a core valuation gauge.",
+    "Forward P/E": "Share price divided by the consensus EPS estimate for the next fiscal year. Valuation on expected (not historical) earnings.",
+    "PEG": "P/E divided by the expected EPS growth rate. Contextualizes the P/E against growth: ~1 is often read as fairly priced for growth.",
+    "P/S": "Price-to-sales: market cap divided by trailing-12-month revenue. Useful when earnings are thin or negative.",
+    "P/B": "Price-to-book: share price divided by book value per share. Price relative to accounting net worth; common for financials/asset-heavy names.",
+    "P/C": "Price-to-cash: share price divided by cash per share. How much of the price is backed by cash on hand.",
+    "P/FCF": "Price-to-free-cash-flow: market cap divided by trailing free cash flow. Valuation against actual cash generation.",
+
+    # --- dividends ---
+    "Dividend": "Forward/indicated dividend YIELD: annualized dividend as a percent of the share price. Income return a buyer earns at today's price. (Dollar amount is 'Dividend TTM'.)",
+    "Payout Ratio": "Share of earnings paid out as dividends (dividends / earnings). Signals dividend sustainability and reinvestment posture.",
+
+    # --- EPS family ---
+    "EPS": "Trailing-12-month diluted earnings per share, in dollars. Company profit attributable to each share; the denominator of the P/E.",
+    "EPS next Q": "Consensus analyst estimate of next quarter's EPS, in dollars. The market's near-term earnings expectation to beat or miss.",
+    "EPS This Y": "Percent growth in EPS expected this fiscal year vs last fiscal year. Current-year earnings momentum.",
+    "EPS Next Y": "Percent growth in EPS expected next fiscal year vs this fiscal year. Forward earnings-growth expectation.",
+    "EPS Past 5Y": "Annualized (CAGR) EPS growth over the past 5 fiscal years. Long-run historical earnings-growth track record.",
+    "EPS Next 5Y": "Analysts' annualized long-term EPS growth estimate (~5 years, CAGR). Consensus view of durable growth.",
+    "EPS Q/Q": "EPS growth of the most recent quarter vs the SAME quarter one year ago (year-over-year, despite the name). Latest earnings acceleration/deceleration.",
+    "EPS YoY TTM": "EPS growth of the trailing 12 months vs the prior trailing 12 months. A smoothed, seasonality-free earnings-growth read.",
+    "EPS Surprise": "Percent by which the last reported EPS beat (+) or missed (-) consensus. A catalyst signal around earnings.",
+
+    # --- sales / revenue ---
+    "Sales Past 5Y": "Annualized (CAGR) revenue growth over the past 5 fiscal years. Long-run top-line growth track record.",
+    "Sales Q/Q": "Revenue growth of the most recent quarter vs the same quarter one year ago (year-over-year, despite the name). Latest top-line momentum.",
+    "Sales YoY TTM": "Revenue growth of the trailing 12 months vs the prior trailing 12 months. Smoothed top-line growth read.",
+    "Sales": "Trailing-12-month total revenue, in dollars. Overall business scale on the top line.",
+    "Income": "Trailing-12-month net income (bottom-line profit), in dollars. Absolute profitability after all costs, interest, and taxes.",
+    "Revenue Surprise": "Percent by which the last reported revenue beat (+) or missed (-) consensus. Demand-side catalyst signal.",
+
+    # --- shares / ownership ---
+    "Outstanding": "Total shares issued and held by all holders. Basis for market cap and per-share figures.",
+    "Float": "Shares actually available for public trading (excludes locked-up insider/strategic holdings). Drives liquidity and volatility.",
+    "Float %": "Float as a percent of shares outstanding. How much of the company freely trades.",
+    "Insider Own": "Percent of shares held by company insiders. Higher levels can signal management alignment.",
+    "Insider Trans": "Net recent change in insider holdings (percent). Direction of insider buying/selling.",
+    "Inst Own": "Percent of shares held by institutions (funds, banks). Indicates professional sponsorship.",
+    "Inst Trans": "Net recent change in institutional holdings (percent). Direction of institutional accumulation/distribution.",
+    "Short Float": "Shares sold short as a percent of float. Gauges bearish positioning and squeeze potential.",
+    "Short Ratio": "Days-to-cover: short interest divided by average daily volume. How long shorts would take to buy back.",
+    "Short Interest": "Total number of shares currently sold short. Absolute bearish positioning.",
+
+    # --- profitability & returns ---
+    "ROA": "Return on assets: net income as a percent of total assets. How efficiently assets generate profit. (Net-income based - sensitive to one-off items.)",
+    "ROE": "Return on equity: net income as a percent of shareholder equity. Profit generated on shareholders' capital. (Net-income based - one-off sensitive.)",
+    "ROIC": "Finviz return on invested capital = net income / invested capital. Return on all capital employed. NOTE: net-income based here (not the textbook NOPAT version), so one-off sensitive.",
+    "Curr R": "Current ratio: current assets / current liabilities. Short-term liquidity - ability to cover near-term obligations.",
+    "Quick R": "Quick ratio: liquid current assets (ex-inventory) / current liabilities. A stricter liquidity test.",
+    "LTDebt/Eq": "Long-term debt relative to shareholder equity. Structural leverage from long-dated borrowing.",
+    "Debt/Eq": "Total debt relative to shareholder equity. Overall financial leverage and balance-sheet risk.",
+    "Gross M": "Gross margin: (revenue - cost of goods sold) / revenue. Core product profitability before operating costs.",
+    "Oper M": "Operating margin: operating income / revenue. Profitability from core operations, before interest, taxes, and one-offs.",
+    "Profit M": "Net profit margin: net income / revenue. Cents of bottom-line profit per dollar of sales. (One-off sensitive.)",
+
+    # --- performance ---
+    "Perf Week": "Total price return over the past week. Very short-term momentum.",
+    "Perf Month": "Total price return over the past month. Short-term momentum.",
+    "Perf Quart": "Total price return over the past quarter. Intermediate momentum.",
+    "Perf Half": "Total price return over the past six months. Medium-term momentum.",
+    "Perf Year": "Total price return over the past year. Longer-term momentum / trend.",
+    "Perf YTD": "Total price return since the start of the calendar year.",
+
+    # --- risk / technical ---
+    "Beta": "Sensitivity of the stock's returns to the overall market (1 = moves with the market). Systematic-risk measure.",
+    "ATR": "Average True Range: typical daily price movement in dollars. Absolute volatility for sizing/stops.",
+    "Volatility W": "Average daily price volatility over the past week (percent). Recent choppiness.",
+    "Volatility M": "Average daily price volatility over the past month (percent). Recent risk level.",
+    "SMA20": "Percent distance of the current price from its 20-day simple moving average. Short-term trend position.",
+    "SMA50": "Percent distance of the current price from its 50-day simple moving average. Medium-term trend position.",
+    "SMA200": "Percent distance of the current price from its 200-day simple moving average. Long-term trend position.",
+    "52W High": "Percent below the highest price of the last 52 weeks. Proximity to yearly highs (breakout context).",
+    "52W Low": "Percent above the lowest price of the last 52 weeks. Proximity to yearly lows (support/oversold context).",
+    "RSI": "Relative Strength Index (14-day, 0-100). Momentum oscillator; >70 often overbought, <30 oversold.",
+
+    # --- misc / identifiers ---
+    "Earnings": "Date (and BMO/AMC timing) of the next scheduled earnings report. Key event marker.",
+    "Target Price": "Mean analyst 12-month price target. Consensus expected fair value.",
+    "Book/sh": "Book (accounting net-worth) value per share, in dollars.",
+    "Cash/sh": "Cash and equivalents per share, in dollars. Downside cushion / dry powder per share.",
+    "Employees": "Reported full-time headcount. A rough operating-scale proxy.",
+    "Index": "Membership in major indices (e.g. S&P 500). Signals inclusion-driven demand and profile.",
+    "Optionable": "Whether listed options trade on the stock (hedging/leverage availability).",
+    "Prev Close": "Previous trading session's closing price, in dollars.",
+    "Shortable": "Whether the stock can be sold short.",
+    "Recom": "Mean analyst recommendation on a 1-5 scale (1 = strong buy, 5 = strong sell). Consensus rating.",
+    "Avg Volume": "Average daily share volume. Liquidity measure for position sizing.",
+    "Rel Volume": "Today's volume relative to its average. Spots unusual activity / news-driven interest.",
+    "Volume": "Shares traded in the current/most recent session.",
+    "Price": "Current (or latest) share price, in dollars.",
+    "Change": "Percent price change on the day.",
+    "Return% 1Y": "Total return over the trailing one year (price appreciation).",
+    "Dividend TTM": "Trailing-12-month dividend paid per share, in dollars. The actual cash dividend amount.",
+    "Dividend Ex Date": "Ex-dividend date: buy before this date to receive the next dividend.",
+    "52W Range": "The 52-week low-to-high price range as a raw string. Context for where price sits in its yearly band.",
+    "Enterprise Value": "Total takeover value = market cap + debt - cash. Capital-structure-neutral size measure used in EV multiples.",
+    "EV/EBITDA": "Enterprise value divided by EBITDA. Capital-structure-neutral valuation multiple; common for cross-company comparison.",
+    "EV/Sales": "Enterprise value divided by revenue. EV-based valuation useful when margins/earnings are not comparable.",
+}
+
 
 # ---------------------------------------------------------------------------
 # The spec. Order mirrors CUSTOM_TABLE_ALL_FIELDS_NEW.
@@ -283,16 +405,20 @@ def to_markdown():
         "mock payload in tests; `cross-ref` / `convention` = inferred, lower "
         "confidence.",
         "",
-        "| Finviz code | Field | Kind | Unit | Period | Compare with | Src | Conf | Note |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "**`Description`** is the plain-language, client-facing summary of what the "
+        "value tells you and how it is composed.",
+        "",
+        "| Finviz code | Field | Description | Kind | Unit | Period | Compare with | Src | Conf | Note |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for fs in FIELD_SPECS:
         code = "-" if fs.finviz_code is None else str(fs.finviz_code)
         cmp = ", ".join(comparable_to(fs.name)) or "-"
         note = fs.note.replace("|", "\\|")
+        desc = fs.description.replace("|", "\\|")
         lines.append(
-            f"| {code} | `{fs.name}` | {fs.kind} | {fs.unit} | {fs.period or '-'} | "
-            f"{cmp} | {fs.source} | {fs.confidence} | {note} |"
+            f"| {code} | `{fs.name}` | {desc} | {fs.kind} | {fs.unit} | "
+            f"{fs.period or '-'} | {cmp} | {fs.source} | {fs.confidence} | {note} |"
         )
     lines += [
         "",
