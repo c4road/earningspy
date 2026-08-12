@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Callable, Dict, List, Optional
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 import tenacity
@@ -136,6 +137,24 @@ def finviz_request(url: str, user_agent: str, session: Optional[requests.Session
         raise
 
 
+def _loggable_url(url: str) -> str:
+    """Return the URL without the ``c`` column-selector param, for readable logs.
+
+    The ``c=0,1,2,...`` blob only tells the scraper which columns to return, so it
+    makes log lines huge without helping anyone who opens the link in a browser.
+    Every other param (v, t, f, o, s, r, ...) is preserved in order so the link
+    still resolves to the same screener page and offset. Never raises: on any
+    parsing problem the original URL is returned, since this is only cosmetic.
+    """
+    try:
+        parts = urlparse(url)
+        query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+                 if key != "c"]
+        return urlunparse(parts._replace(query=urlencode(query)))
+    except Exception:
+        return url
+
+
 def sequential_data_scrape(
     scrape_func: Callable, urls: List[str], user_agent: str, *args, session: Optional[requests.Session] = None, timeout: int = 10, **kwargs
 ) -> List[Dict]:
@@ -159,7 +178,7 @@ def sequential_data_scrape(
     try:
         for idx, url in enumerate(urls, 1):
             try:
-                logger.info(f"Scraping {idx}/{total}: {url}")
+                logger.info(f"Scraping {idx}/{total}: {_loggable_url(url)}")
                 response = finviz_request(url, user_agent, session=session, timeout=timeout)
                 
                 # Check for empty or suspicious responses
