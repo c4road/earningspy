@@ -48,6 +48,27 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self.affected_rows: Optional[pd.DataFrame] = None
 
 
+    @staticmethod
+    def _validate_window(days: int) -> None:
+        """Validate the post-earnings window.
+
+        The three canonical windows (ALLOWED_WINDOWS = 3/30/60) are the standard,
+        model-facing set and always pass. Arbitrary windows are also supported —
+        the abnormal-return / expected-return math generalizes to any horizon (see
+        CARMixin._expected_return_for_series) — but must be a positive integer
+        number of business days. This still rejects the genuinely invalid input
+        (0, negative, non-integer, None) the old ``days not in ALLOWED_WINDOWS``
+        gate was implicitly catching.
+        """
+        # bool is an int subclass — exclude it explicitly. Float windows (e.g. 3.0)
+        # must be rejected too: `3.0 in ALLOWED_WINDOWS` is True (3.0 == 3), but a
+        # float flows into pct_change(days) and breaks, so gate on strict int first.
+        if not isinstance(days, int) or isinstance(days, bool) or days <= 0:
+            raise Exception(
+                f"Invalid day range {days!r}. Use one of the canonical windows "
+                f"{ALLOWED_WINDOWS}, or a positive integer number of business days."
+            )
+
     def _load_calendar(self, calendar: Optional[pd.DataFrame]) -> pd.DataFrame:
 
         calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] = calendar.apply(lambda row: days_left(row), axis=1)
@@ -68,8 +89,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         async_: bool = False,
     ) -> Union["PEADInspector", pd.DataFrame]:
 
-        if days not in ALLOWED_WINDOWS:
-            raise Exception(f'Invalid day range. Select from {ALLOWED_WINDOWS}')
+        self._validate_window(days)
 
         self.affected_rows = self._get_affected_rows(days, post_earnings=post_earnings)
         if dry_run:
@@ -94,8 +114,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         async_: bool = False,
     ) -> Union["PEADInspector", pd.DataFrame]:
 
-        if days not in ALLOWED_WINDOWS:
-            raise Exception(f'Invalid day range. Select from {ALLOWED_WINDOWS}')
+        self._validate_window(days)
 
         if not check_column or check_column not in AVAILABLE_CHECK_COLUMNS:
             raise Exception(f"Provide a column to check for NaNs to do the refresh, must be from this list {AVAILABLE_CHECK_COLUMNS}")

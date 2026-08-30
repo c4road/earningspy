@@ -101,18 +101,35 @@ class CARMixin:
         return np.round(capm, 4)
 
 
+    def _expected_return_for_series(self, series: pd.Series, days: int) -> float:
+        """Historical mean N-day return of a price series, up to and including ``date``.
+
+        The three canonical windows keep their exact original construction so the
+        production 3/30/60 frame is unchanged:
+            days == 3  -> mean of 3-business-day point returns (daily pct_change(3))
+            days == 30 -> mean of month-over-month returns   (monthly resample)
+            days == 60 -> mean of two-month returns          (bimonthly resample)
+
+        Any OTHER window generalizes the days==3 construction: the mean of the
+        N-business-day point return on the daily series. This mirrors how the raw
+        window return itself is measured (earnings_date + N business days in
+        ``get_window_pct_change``), so the expected-return baseline is on the same
+        N-business-day footing as the realized return it is subtracted from.
+        """
+        if days == 30:
+            return series.resample('1ME').ffill().pct_change(fill_method=None).mean()
+        if days == 60:
+            return series.resample('2ME').ffill().pct_change(fill_method=None).mean()
+        # days == 3 and every other (arbitrary) window: N-business-day point return.
+        return series.pct_change(days, fill_method=None).mean()
+
     def get_expected_return(self, row: pd.Series, days: int) -> float:
 
         date = row.name[0]
         ticker = row.name[1]
 
         try:
-            if days == 3:
-                exp_ret = self.price_history[ticker].loc[:date].pct_change(days, fill_method=None).mean()
-            elif days == 30:
-                exp_ret = self.price_history[ticker].loc[:date].resample('1ME').ffill().pct_change(fill_method=None).mean()
-            elif days == 60:
-                exp_ret = self.price_history[ticker].loc[:date].resample('2ME').ffill().pct_change(fill_method=None).mean()
+            exp_ret = self._expected_return_for_series(self.price_history[ticker].loc[:date], days)
         except KeyError:
             exp_ret = np.nan
 
@@ -123,12 +140,7 @@ class CARMixin:
 
         date = row.name[0]
         try:
-            if days == 3:
-                exp_ret = self.price_history[SP_500_TICKER].loc[:date].pct_change(days, fill_method=None).mean()
-            elif days == 30:
-                exp_ret = self.price_history[SP_500_TICKER].loc[:date].resample('1ME').ffill().pct_change(fill_method=None).mean()
-            elif days == 60:
-                exp_ret = self.price_history[SP_500_TICKER].loc[:date].resample('2ME').ffill().pct_change(fill_method=None).mean()
+            exp_ret = self._expected_return_for_series(self.price_history[SP_500_TICKER].loc[:date], days)
         except KeyError:
             exp_ret = np.nan
 
