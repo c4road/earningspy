@@ -20,6 +20,14 @@ from earningspy.common.constants import (
     VIX_TICKER,
 )
 
+
+class WindowNotClosed(KeyError):
+    """The event window ends after the last available price: its return is not known yet.
+
+    A KeyError subclass so existing ``except KeyError`` paths still yield NaN.
+    """
+
+
 class CARMixin:
 
     def _coerce_price_timestamp(self, value: Union[pd.Timestamp, str]) -> pd.Timestamp:
@@ -51,8 +59,17 @@ class CARMixin:
 
         # Start should not jump forward when a prior trading day exists.
         initial_date = self._resolve_price_date(initial_target, method="pad", fallback_method="backfill")
-        # End should not jump backward when a later trading day exists.
-        end_date = self._resolve_price_date(end_target, method="backfill", fallback_method="pad")
+        # A window that ends after the last available price has not closed: its return is
+        # unknown. Never resolve the end backward — that would store a shorter window as if
+        # it were the full one. The row stays empty and is computed once the window closes.
+        last_price_date = self.price_history.index.max()
+        if end_target > last_price_date:
+            raise WindowNotClosed(
+                f"window {initial_target.date()} -> {end_target.date()} ends after the last "
+                f"price {last_price_date.date()}"
+            )
+        # End resolves forward to the next trading day (holidays).
+        end_date = self._resolve_price_date(end_target, method="backfill")
 
         return initial_date, end_date
 
@@ -83,6 +100,8 @@ class CARMixin:
             pct = (end_price - start_price) / start_price
             return np.round(pct, 4)
 
+        except WindowNotClosed:
+            return np.nan
         except KeyError as exc:
             print(f"❌ Could not compute window pct change for {ticker}: {exc}")
             return np.nan
@@ -160,7 +179,10 @@ class CARMixin:
 
     def get_vix(self, row: pd.Series, days: int = 0) -> float:
         earnings_date = row.name[0]
-        initial_date, end_date = self._resolve_window_dates(earnings_date, days)
+        try:
+            initial_date, end_date = self._resolve_window_dates(earnings_date, days)
+        except WindowNotClosed:
+            return np.nan
 
         ts_slice = self.price_history.loc[initial_date:end_date]
         try:

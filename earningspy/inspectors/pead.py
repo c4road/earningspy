@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Literal, Optional, Union
 
 import pandas as pd
@@ -163,8 +164,12 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         post_earnings: bool = False,
     ) -> pd.DataFrame:
 
+        # DAYS_LEFT is in calendar days, the window in business days (60 bd ≈ 84–87 calendar
+        # days). Rows qualify from `days` calendar days after the report; while their window
+        # is still open the return stays empty and the row is retried on later runs, up to
+        # 30 calendar days after the window can have closed.
         start = days
-        end = days + 30
+        end = math.ceil(days * 7 / 5) + 30
 
         if deep:
             affected_rows = self.calendar[(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -start)]
