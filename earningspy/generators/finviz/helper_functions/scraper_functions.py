@@ -6,7 +6,7 @@ import time
 import requests
 from lxml import etree, html
 
-from earningspy.generators.finviz.constants import SCRAPING_SELECTORS
+from earningspy.generators.finviz.constants import SCRAPED_HEADER_ALIASES, SCRAPING_SELECTORS
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +32,33 @@ def get_table(page_html: requests.Response, headers, rows=None, **kwargs):
         frags = [text.strip() for text in td.xpath('.//text()') if text.strip()]
         return frags[-1] if frags else ''
 
-    # Select the HTML of the rows and append each column text to a list
-    all_rows = [
-        [_cell_value(td) for td in column.xpath('td')]
-        for column in page_parsed.cssselect(SCRAPING_SELECTORS['table_rows'])
-    ]
+    def _grid_cell_value(cell):
+        # The ticker cell prefixes the symbol with a logo initial; the
+        # attribute carries the bare symbol.
+        return cell.get('data-ticker') or cell.xpath('normalize-space()')
+
+    grid_rows = page_parsed.cssselect(SCRAPING_SELECTORS['grid_rows'])
+    if grid_rows:
+        header_ids = [
+            header.get('data-column-id')
+            for header in page_parsed.cssselect(SCRAPING_SELECTORS['grid_headers'])
+        ]
+        all_rows = []
+        for row in grid_rows:
+            cells = row.cssselect(SCRAPING_SELECTORS['grid_cells'])
+            cell_ids = [cell.get('data-column-id') for cell in cells]
+            if cell_ids != header_ids:
+                raise ValueError(
+                    f"Finviz column misalignment: header column ids {header_ids} but a "
+                    f"row carries {cell_ids}. Finviz likely changed the grid markup."
+                )
+            all_rows.append([_grid_cell_value(cell) for cell in cells])
+    else:
+        # Select the HTML of the rows and append each column text to a list
+        all_rows = [
+            [_cell_value(td) for td in column.xpath('td')]
+            for column in page_parsed.cssselect(SCRAPING_SELECTORS['table_rows'])
+        ]
 
     logger.debug(f"Found {len(all_rows)} table rows using selector '{SCRAPING_SELECTORS['table_rows']}'")
     if not all_rows:
@@ -93,24 +115,29 @@ def get_total_rows(page_content):
     return 0
 
 
+def get_table_headers(page_content):
+    """ Returns the screener column labels, grid or table layout. """
+    header_elements = page_content.cssselect(SCRAPING_SELECTORS['grid_headers'])
+    if not header_elements:
+        table_header_rows = page_content.cssselect('tr[valign="middle"]')
+        header_elements = table_header_rows[0].xpath("th") if table_header_rows else []
+
+    headers = []
+    for header_element in header_elements:
+        # normalize-space extracts the text while ignoring internal elements
+        header_text = header_element.xpath("normalize-space()")
+        if header_text:
+            headers.append(SCRAPED_HEADER_ALIASES.get(header_text, header_text))
+    return headers
+
+
 def get_page_urls(page_content, rows, url):
     """ Returns a list containing all of the page URL addresses. """
     logger.debug(f"Extracting page URLs for {rows} rows")
-    
-    page_options = page_content.cssselect(SCRAPING_SELECTORS['page_options'])
-    if not page_options:
-        logger.warning(f"No page options found with selector '{SCRAPING_SELECTORS['page_options']}'. Finviz may have changed pagination.")
-        return [url]  # fallback to single page
-    
-    total_pages = int(page_options[0].text.split("/")[1])
-    logger.debug(f"Found {total_pages} total pages")
-    
-    urls = []
-    for page_number in range(1, total_pages + 1):
-        sequence = 1 + (page_number - 1) * 20
-        if sequence - 20 <= rows < sequence:
-            break
-        urls.append(url + f"&r={str(sequence)}")
+
+    page_size = SCRAPING_SELECTORS['page_size']
+    total_pages = max(1, -(-rows // page_size))
+    urls = [url + f"&r={1 + page * page_size}" for page in range(total_pages)]
 
     logger.debug(f"Generated {len(urls)} page URLs")
     return urls

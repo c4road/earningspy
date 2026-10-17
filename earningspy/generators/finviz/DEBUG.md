@@ -121,13 +121,10 @@ _Note: Code examples for debug logging configuration are also available in the m
    response = requests.get("https://finviz.com/screener.ashx?v=111&f=ind_solar", headers=FINVIZ_HEADERS)
    parsed = html.fromstring(response.text)
 
-   # Test table rows selector
-   rows = parsed.cssselect(SCRAPING_SELECTORS['table_rows'])
-   print(f"Found {len(rows)} table rows")
-
-   # Test pagination
-   pages = parsed.cssselect(SCRAPING_SELECTORS['page_options'])
-   print(f"Found {len(pages)} page options")
+   # Test grid rows / headers selectors (the screener renders a div grid)
+   rows = parsed.cssselect(SCRAPING_SELECTORS['grid_rows'])
+   headers = parsed.cssselect(SCRAPING_SELECTORS['grid_headers'])
+   print(f"Found {len(rows)} grid rows, {len(headers)} headers")
    ```
 
 **Solutions**:
@@ -149,16 +146,18 @@ When Finviz changes their HTML:
    ```
 
 2. **Find new selectors**:
-   - Table rows: Look for `<tr>` elements containing stock data
-   - Pagination: Look for `<option>` elements with page numbers
-   - Headers: Look for `<th>` elements with column names
+   - Rows: `div.fv-table_row` elements, one `[role="gridcell"]` per column
+   - Headers: `[role="columnheader"]` elements with column labels
+   - Row count: the `#1 / N Total` toolbar text (`total_rows_patterns`)
+   - The grid renders only a width-limited prefix of the requested `c=` columns;
+     the screener refetches the leftovers per page and merges them on `No.`
 
 3. **Update constants.py**:
 
    ```python
    SCRAPING_SELECTORS = {
        'table_rows': 'tr.new-selector-here',
-       'page_options': 'option.new-pagination-selector',
+       'grid_rows': 'div.new-row-selector',
        # etc.
    }
    ```

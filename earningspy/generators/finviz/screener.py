@@ -1,10 +1,12 @@
 import json
+import logging
 import pathlib
 import urllib.request
 from urllib.parse import parse_qs as urlparse_qs
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
+from lxml import html
 from user_agent import generate_user_agent
 
 import earningspy.generators.finviz.helper_functions.scraper_functions as scrape
@@ -13,6 +15,8 @@ from earningspy.generators.finviz.helper_functions.error_handling import Invalid
 from earningspy.generators.finviz.helper_functions.request_functions import (http_request_get,
                                                        sequential_data_scrape)
 from earningspy.generators.finviz.helper_functions.save_data import export_to_csv, export_to_db
+
+logger = logging.getLogger(__name__)
 
 TABLE_TYPES = {
     "Overview": "111",
@@ -434,20 +438,36 @@ class Screener(object):
         else:
             return self._rows
 
-    def __get_table_headers(self):
-        """ Private function used to return table headers. """
-        headers = []
+    def __scrape_page(self, page_url):
+        """
+        Returns the rows of one screener page with every custom column.
 
-        header_elements = self._page_content.cssselect('tr[valign="middle"]')[0].xpath("th")
-        
-        for header_element in header_elements:
-            # Use normalize-space to extract text content while ignoring internal elements
-            header_text = header_element.xpath("normalize-space()")
-            
-            if header_text:
-                headers.append(header_text)
-        
-        return headers
+        The grid screener renders only a width-limited prefix of the requested
+        columns, and the width depends on the page's content. The columns left
+        over are requested again (behind "No.", the row key) until each one
+        has been rendered, and the chunks are merged row by row.
+        """
+        remaining = [column for column in self._custom if column != "0"]
+        rows_by_number = {}
+        while True:
+            url = _with_columns(page_url, ["0"] + remaining) if self._custom else page_url
+            page_text, _ = http_request_get(url, session=self._session, parse=False, user_agent=self._user_agent)
+            headers = scrape.get_table_headers(html.fromstring(page_text))
+            for row in scrape.get_table(page_text, headers, self._rows):
+                rows_by_number.setdefault(row.get("No.") or id(row), {}).update(row)
+
+            if not self._custom:
+                break
+            rendered = len(headers) - 1
+            if rendered <= 0:
+                raise ValueError(
+                    f"Finviz rendered no columns for c={','.join(remaining)}. "
+                    f"Finviz likely changed the screener layout."
+                )
+            remaining = remaining[rendered:]
+            if not remaining:
+                break
+        return list(rows_by_number.values())
 
     def __search_screener(self):
         """ Private function used to return data from the FinViz screener. """
@@ -467,20 +487,21 @@ class Screener(object):
         )
 
         self._rows = self.__check_rows()
-        self.headers = self.__get_table_headers()
 
-        pages_data = sequential_data_scrape(
-            scrape.get_table,
-            scrape.get_page_urls(self._page_content, self._rows, self._url),
-            self._user_agent,
-            self.headers,
-            self._rows,
-            session=self._session,
-        )
-
+        page_urls = scrape.get_page_urls(self._page_content, self._rows, self._url)
         data = []
-        for page in pages_data:
-            for row in page:
-                data.append(row)
+        for page_number, page_url in enumerate(page_urls, 1):
+            logger.info(f"Scraping page {page_number}/{len(page_urls)}")
+            data.extend(self.__scrape_page(page_url))
+        data = data[: self._rows]
+        self.headers = list(dict.fromkeys(header for row in data for header in row))
 
         return data
+
+
+def _with_columns(url, columns):
+    """ Returns the screener url with its `c=` column list replaced. """
+    parts = urlparse(url)
+    query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True) if key != "c"]
+    query.append(("c", ",".join(columns)))
+    return urlunparse(parts._replace(query=urlencode(query, safe=",")))
