@@ -74,6 +74,14 @@ def test_get_screener_data(filters):
     _assert_row_nan_threshold(data)
 
 
+def test_screener_data_has_no_all_nan_columns():
+    """A column that is NaN for every row means Finviz renamed or dropped its label."""
+    data = _get_screener_data(filter_string='earningsdate_thismonth', sort_column='marketcap')
+
+    all_nan = [column for column in data.columns if data[column].isna().all()]
+    assert not all_nan, f"columns entirely NaN (Finviz label renamed or dropped?): {all_nan}"
+
+
 @pytest.mark.parametrize("scopes", [
     'next_week',
 ])
@@ -148,3 +156,4 @@ def test_get_table_guardrail_raises_on_row_cell_mismatch():
 
     with pytest.raises(ValueError, match='Finviz column-count mismatch'):
         get_table(page_html, headers)
+

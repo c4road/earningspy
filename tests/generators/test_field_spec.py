@@ -40,14 +40,11 @@ LEVEL_KINDS = {
 }
 _MONEY_SUFFIX = re.compile(r"^-?\d[\d,]*\.?\d*[KMBT]?$")
 
-# The mock fixture is an older Finviz snapshot that predates a few columns we now
-# request. These are legitimately absent (or all-null) in the fixture, so the
+# Fields requested on the URL that the fixture legitimately lacks, so the
 # format assertions skip them rather than fail. Kept explicit so a NEW gap (a
 # field that should be present but isn't) still fails loudly.
 FIELDS_ABSENT_IN_FIXTURE = {
-    "Enterprise Value", "EV/EBITDA", "EV/Sales",  # added after fixture captured
-    "Return% 1Y",                                 # present but all-null in fixture
-    "Forward P/E",  # fixture predates the 2026-04-26 "Fwd P/E"->"Forward P/E" rename
+    "Return% 1Y",  # Finviz drops column 120 from the request
 }
 
 

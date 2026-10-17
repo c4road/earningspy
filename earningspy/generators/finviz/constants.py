@@ -9,9 +9,11 @@ SCRAPING_SELECTORS = {
     # Table row selectors
     'table_rows': 'tr[valign="top"]',
     'table_headers': 'tr[valign="middle"] th',
-    
-    # Pagination selectors
-    'page_options': 'option[value="1"]',
+
+    # Grid screener (div-based table on /screener/stocks)
+    'grid_rows': 'div.fv-table_row',
+    'grid_cells': '[role="gridcell"]',
+    'grid_headers': '[role="columnheader"]',
     
     # Analyst ratings table
     'analyst_ratings_table': 'table[class="fullview-ratings-outer"]',
@@ -19,8 +21,12 @@ SCRAPING_SELECTORS = {
     # Total rows patterns (for fallback parsing)
     'total_rows_patterns': [
         ('class="count-text whitespace-nowrap">#1 / ', ' Total</div>'),
-        ('class="count-text">#1 / ', ' Total</td>')
+        ('class="count-text">#1 / ', ' Total</td>'),
+        ('class="fv-table_toolbar-count">#1 / ', ' Total</p>'),
     ],
+
+    # Rows per screener page (the `r=` offset step)
+    'page_size': 20,
     
     # Ticker details selectors (add more as needed)
     'ticker_details_rows': 'tr[valign="top"]',  # placeholder
@@ -272,6 +278,12 @@ BOOLEAN_COLUMNS = [
 # ==============================================================
 FINVIZ_COLUMN_RENAMES = {
     'Forward P/E': 'Fwd P/E',
+}
+
+# Grid-screener header labels mapped back to the table-screener labels the
+# rest of the package keys on.
+SCRAPED_HEADER_ALIASES = {
+    'Change %': 'Change',
 }
 
 TICKER_KEY = 'Ticker'
