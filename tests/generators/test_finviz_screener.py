@@ -2,6 +2,7 @@ import os
 from urllib.parse import parse_qsl, urlparse
 
 import pytest
+import requests
 from lxml import html
 
 import earningspy.generators.finviz.screener as screener_module
@@ -9,14 +10,14 @@ from earningspy.generators.finviz.constants import (
     CUSTOM_TABLE_ALL_FIELDS_NEW,
     CUSTOM_TABLE_FIELDS_ON_URL,
 )
-from earningspy.generators.finviz.helper_functions.error_handling import InvalidTableType, NoResults
+from earningspy.generators.finviz.helper_functions.error_handling import InvalidTableType, NoResults, RowCapExceeded
 from earningspy.generators.finviz.helper_functions.scraper_functions import (
     get_page_urls,
     get_table,
     get_table_headers,
     get_total_rows,
 )
-from earningspy.generators.finviz.screener import Screener
+from earningspy.generators.finviz.screener import MAX_REACHABLE_ROWS, Screener, _reversed_order
 
 GRID_FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'utils', 'finviz_grid')
 URL_COLUMNS = [c for c in CUSTOM_TABLE_FIELDS_ON_URL.replace('&c=', '').replace('\n', '').split(',') if c]
@@ -221,3 +222,90 @@ def test_screener_parses_recorded_grid_pages(monkeypatch):
     assert data[1]["52W Range"] == "0.66 - 2.99"
     assert data[2]["Earnings"] == "Oct 14/a"
     assert len([1 for _, _, query in log if query.get("r") == "1"]) == 3  # three column chunks
+
+
+# ---------------------------------------------------------------------------
+# Finviz's 1000-row cap for anonymous users
+# ---------------------------------------------------------------------------
+def _capped_screen(tickers, page_size=20):
+    """Serves `tickers` (in ascending order) like Finviz: pages of `page_size`
+    in either sort direction, and a 403 for any page past row 1000."""
+    def respond(columns, offset, query):
+        start = int(offset)
+        if start > MAX_REACHABLE_ROWS:
+            response = requests.Response()
+            response.status_code = 403
+            raise requests.HTTPError("403 Client Error: Forbidden", response=response)
+        ordered = tickers[::-1] if query.get("o", "").startswith("-") else tickers
+        page = ordered[start - 1:start - 1 + page_size]
+        rows = [[str(start + i), ticker] for i, ticker in enumerate(page)]
+        return _grid_page([("row", "No."), ("ticker", "Ticker")], rows, total=len(tickers))
+    return respond
+
+
+def test_screener_reads_rows_past_cap_in_reverse_order(monkeypatch):
+    tickers = [f"T{n:04d}" for n in range(1, 1031)]
+    log = _serve(monkeypatch, _capped_screen(tickers))
+
+    data = Screener(filters=["earningsdate_thismonth"], sort_order="marketcap").data
+
+    assert [row["Ticker"] for row in data] == tickers
+    assert [row["No."] for row in data] == [str(n) for n in range(1, 1031)]
+    pages = [(query.get("o"), int(offset)) for offset, _, query in log[1:]]
+    assert max(r for o, r in pages if o == "marketcap") == 981
+    assert [r for o, r in pages if o == "-marketcap"] == [1, 21]
+
+
+def test_screener_respects_requested_rows_past_cap(monkeypatch):
+    tickers = [f"T{n:04d}" for n in range(1, 1501)]
+    _serve(monkeypatch, _capped_screen(tickers))
+
+    data = Screener(sort_order="-price", rows=1200).data
+
+    assert [row["Ticker"] for row in data] == tickers[::-1][:1200]
+
+
+def test_screener_under_cap_never_reads_reverse_order(monkeypatch):
+    tickers = [f"T{n:04d}" for n in range(1, 1001)]
+    log = _serve(monkeypatch, _capped_screen(tickers))
+
+    data = Screener(sort_order="marketcap").data
+
+    assert len(data) == 1000
+    assert {query.get("o") for _, _, query in log} == {"marketcap"}
+
+
+def test_screener_warns_when_blank_sort_value_is_unreachable(monkeypatch, caplog):
+    """Finviz sorts a blank sort value last in both directions (seen live: ASBH,
+    no market cap, row 1030 either way), so it falls outside both windows. The
+    shortfall is logged, not silently dropped."""
+    ranked = [f"T{n:04d}" for n in range(1, 1030)]
+    forward = _capped_screen(ranked + ["BLANK"])
+    reverse = _capped_screen(["BLANK"] + ranked)  # reversed by the server: BLANK last again
+
+    def respond(columns, offset, query):
+        return (reverse if query.get("o", "").startswith("-") else forward)(columns, offset, query)
+
+    _serve(monkeypatch, respond)
+
+    data = Screener(sort_order="marketcap").data
+
+    assert len(data) == 1029
+    assert "BLANK" not in [row["Ticker"] for row in data]
+    assert "Fetched 1029 of 1030 rows" in caplog.text
+    assert "blank 'marketcap'" in caplog.text
+
+
+def test_screener_raises_when_screen_exceeds_both_directions(monkeypatch):
+    log = _serve(monkeypatch, _capped_screen([f"T{n}" for n in range(2001)]))
+
+    with pytest.raises(RowCapExceeded, match="2001 rows"):
+        Screener(sort_order="marketcap")
+    assert len(log) == 1  # fails before scraping any page
+
+
+@pytest.mark.parametrize("order, expected", [
+    ("marketcap", "-marketcap"), ("-marketcap", "marketcap"), ("", "-ticker"),
+])
+def test_reversed_order(order, expected):
+    assert _reversed_order(order) == expected

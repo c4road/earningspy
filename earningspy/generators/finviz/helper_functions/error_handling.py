@@ -66,3 +66,13 @@ class ConnectionTimeout(Exception):
         super(ConnectionTimeout, self).__init__(
             f'Connection timed out after {connection_settings["CONNECTION_TIMEOUT"]} while trying to reach {webpage_link}'
         )
+
+
+class RowCapExceeded(Exception):
+    """ Raise when a screen has more rows than Finviz lets anonymous users reach. """
+
+    def __init__(self, total_rows, cap):
+        super(RowCapExceeded, self).__init__(
+            f"Screen has {total_rows} rows, but Finviz serves anonymous users only the "
+            f"first {cap} rows in each sort direction ({2 * cap} total). Narrow the filters."
+        )
