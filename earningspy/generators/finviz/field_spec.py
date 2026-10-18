@@ -155,6 +155,12 @@ class FieldSpec:
         return self.cadence == Cadence.REPORT_FROZEN
 
     @property
+    def not_applicable_industries(self):
+        """Industry-name prefixes for which this field is structurally n/a.
+        Sourced from NOT_APPLICABLE below."""
+        return NOT_APPLICABLE.get(self.name, ((), ""))[0]
+
+    @property
     def serving(self):
         """Operational serving decision (see ``Serving``), derived from cadence:
         can the 1-5 day-old pre-earnings snapshot be served, or must the field be
@@ -420,6 +426,23 @@ CADENCE = {
 
 
 # ---------------------------------------------------------------------------
+# Structural n/a: fields with no economic meaning for some industries. Finviz
+# publishes "-" for them, which parses to NaN; these entries let consumers serve
+# that NaN as n/a with a reason instead of treating it as missing data.
+# Keyed by field name -> (Finviz industry-name prefixes, reason). Prefixes are
+# matched against the "Industry" column, so "Insurance - " excludes "Insurance
+# Brokers" (which has COGS and a real gross margin).
+# ---------------------------------------------------------------------------
+NOT_APPLICABLE = {
+    "Gross M": (
+        ("Banks - ", "Insurance - "),
+        "Banks and insurers report no cost of goods sold, so gross margin has no "
+        "economic meaning; Finviz publishes '-'. Use Oper M / Profit M instead.",
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
 # The spec. Order mirrors CUSTOM_TABLE_ALL_FIELDS_NEW.
 # ---------------------------------------------------------------------------
 FIELD_SPECS = [
@@ -583,6 +606,16 @@ BY_NAME = {fs.name: fs for fs in FIELD_SPECS}
 BY_CODE = {fs.finviz_code: fs for fs in FIELD_SPECS if fs.finviz_code is not None}
 
 
+def not_applicable_reason(name, industry):
+    """Return why ``name`` has no meaningful value for a company in ``industry``,
+    or ``None`` if the field applies. A missing value with a reason is n/a by
+    construction; a missing value without one is simply unavailable."""
+    prefixes, reason = NOT_APPLICABLE.get(name, ((), ""))
+    if isinstance(industry, str) and industry.startswith(prefixes):
+        return reason
+    return None
+
+
 def comparable_to(name):
     """Return the other fetched field names that are directly comparable
     (equal in magnitude / same compare_group) to ``name``."""
@@ -682,6 +715,19 @@ def to_markdown():
         f"**Unmapped Finviz code(s)** requested in the URL but not captured as a "
         f"named column: {sorted(UNMAPPED_FINVIZ_CODES)} "
         f"(source of the 89-codes vs 88-names offset).",
+        "",
+        "## Not applicable by industry",
+        "",
+        "A NaN in these fields for a matching `Industry` is n/a by construction, "
+        "not missing data (see `not_applicable_reason()`).",
+        "",
+        "| Field | Industry prefixes | Reason |",
+        "|---|---|---|",
+    ]
+    for name, (prefixes, reason) in NOT_APPLICABLE.items():
+        industries = ", ".join(f"`{p}*`" for p in prefixes)
+        lines.append(f"| `{name}` | {industries} | {reason} |")
+    lines += [
         "",
     ]
     return "\n".join(lines)
