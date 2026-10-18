@@ -157,3 +157,26 @@ def test_get_table_guardrail_raises_on_row_cell_mismatch():
     with pytest.raises(ValueError, match='Finviz column-count mismatch'):
         get_table(page_html, headers)
 
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("48.65%", 0.4865),
+    ("1.01%", 0.0101),
+    ("1.00%", 0.01),
+    ("0.50%", 0.005),
+    ("-0.80%", -0.008),
+    ("0.00%", 0.0),
+    ("3.5", 0.035),
+    (50, 0.5),
+])
+def test_format_percent_scales_values(raw, expected):
+    """A '%'-suffixed value is always divided by 100, so values within (-1%, 1%)
+    are not mistaken for already-decimal fractions."""
+    from earningspy.generators.finviz.utils import _format_percent
+    assert _format_percent(raw) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("raw", ["-", "", "—", None, np.nan, "abc%"])
+def test_format_percent_missing_is_nan(raw):
+    from earningspy.generators.finviz.utils import _format_percent
+    assert np.isnan(_format_percent(raw))

@@ -101,7 +101,8 @@ def _format_percent(value):
     - String percentages like "3%", " 3.5 % "
     - Raw numeric values
     - Missing values indicated by "-", "—", or empty strings
-    - Converts percentages > 1 to decimal form (e.g., 50% -> 0.5)
+    - Strings with an explicit "%" are always divided by 100 (e.g., "0.50%" -> 0.005)
+    - Bare values > 1 are treated as percentages (e.g., 50 -> 0.5)
 
     Args:
         value: The percentage value to format. Can be string, numeric, or None.
@@ -112,6 +113,8 @@ def _format_percent(value):
     Examples:
         >>> _format_percent("50%")
         0.5
+        >>> _format_percent("0.50%")
+        0.005
         >>> _format_percent("3.5")
         0.035
         >>> _format_percent("-")
@@ -125,11 +128,16 @@ def _format_percent(value):
         value = value.strip()
         if value in {"", "-", "—"}:
             return np.nan
+        # An explicit "%" is unambiguous: always scale, so values within
+        # (-1%, 1%) such as "0.50%" are not mistaken for an already-decimal 0.5.
+        has_percent_sign = "%" in value
         value = value.replace("%", "")
         try:
             value = float(value)
         except ValueError:
             return np.nan
+        if has_percent_sign:
+            return value / 100
 
     # At this point value should be numeric
     try:

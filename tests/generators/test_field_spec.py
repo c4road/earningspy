@@ -14,8 +14,10 @@ from earningspy.generators.finviz import field_spec
 from earningspy.generators.finviz.field_spec import (
     FIELD_SPECS,
     BY_NAME,
+    NOT_APPLICABLE,
     UNMAPPED_FINVIZ_CODES,
     comparable_to,
+    not_applicable_reason,
     to_markdown,
     Kind,
 )
@@ -467,3 +469,51 @@ def test_income_is_money_level_in_payload():
         f"Income has non-magnitude values: "
         f"{[v for v in values if not _MONEY_SUFFIX.match(str(v))][:3]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Structural n/a by industry
+# ---------------------------------------------------------------------------
+def test_not_applicable_map_has_no_orphans():
+    orphans = set(NOT_APPLICABLE) - set(BY_NAME)
+    assert not orphans, f"NOT_APPLICABLE references unknown fields: {orphans}"
+
+
+def test_not_applicable_entries_have_prefixes_and_reason():
+    for name, (prefixes, reason) in NOT_APPLICABLE.items():
+        assert prefixes and all(isinstance(p, str) and p for p in prefixes), name
+        assert reason.strip(), f"{name} n/a rule has no reason"
+
+
+@pytest.mark.parametrize("industry", [
+    "Banks - Regional", "Banks - Diversified",
+    "Insurance - Property & Casualty", "Insurance - Specialty", "Insurance - Diversified",
+])
+def test_gross_margin_is_na_for_banks_and_insurers(industry):
+    assert not_applicable_reason("Gross M", industry)
+
+
+@pytest.mark.parametrize("industry", [
+    "Asset Management", "Insurance Brokers", "Software - Infrastructure", None,
+])
+def test_gross_margin_applies_elsewhere(industry):
+    assert not_applicable_reason("Gross M", industry) is None
+
+
+def test_other_margins_apply_to_banks():
+    for name in ("Oper M", "Profit M"):
+        assert not_applicable_reason(name, "Banks - Regional") is None
+
+
+def test_na_rule_matches_fixture():
+    """Every fixture row the rule marks n/a has a raw '-' Gross M, and the
+    Financial-sector rows it does not mark (asset managers, brokers) carry a
+    real value, so the rule is neither too broad nor too narrow."""
+    rows = screener_mock_data()
+    na_rows = [r for r in rows if not_applicable_reason("Gross M", r["Industry"])]
+    assert na_rows, "fixture has no bank/insurer rows to exercise the rule"
+    assert all(r["Gross M"] == "-" for r in na_rows), [
+        (r["Ticker"], r["Gross M"]) for r in na_rows if r["Gross M"] != "-"]
+    other_fin = [r for r in rows if r["Sector"] == "Financial"
+                 and not not_applicable_reason("Gross M", r["Industry"])]
+    assert other_fin and all(str(r["Gross M"]).endswith("%") for r in other_fin)

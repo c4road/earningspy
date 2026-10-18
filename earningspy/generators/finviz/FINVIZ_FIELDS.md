@@ -123,3 +123,11 @@ See `docs/FINVIZ_METRIC_BASES.md` for the net-income vs operating basis of the p
 
 **Unmapped Finviz code(s)** requested in the URL but not captured as a named column: [146] (source of the 89-codes vs 88-names offset).
 
+## Not applicable by industry
+
+A NaN in these fields for a matching `Industry` is n/a by construction, not missing data (see `not_applicable_reason()`).
+
+| Field | Industry prefixes | Reason |
+|---|---|---|
+| `Gross M` | `Banks - *`, `Insurance - *` | Banks and insurers report no cost of goods sold, so gross margin has no economic meaning; Finviz publishes '-'. Use Oper M / Profit M instead. |
+
