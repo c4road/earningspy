@@ -11,12 +11,17 @@ from user_agent import generate_user_agent
 
 import earningspy.generators.finviz.helper_functions.scraper_functions as scrape
 from earningspy.generators.finviz.helper_functions.display_functions import create_table_string
-from earningspy.generators.finviz.helper_functions.error_handling import InvalidTableType, NoResults
+from earningspy.generators.finviz.helper_functions.error_handling import InvalidTableType, NoResults, RowCapExceeded
 from earningspy.generators.finviz.helper_functions.request_functions import (http_request_get,
                                                        sequential_data_scrape)
 from earningspy.generators.finviz.helper_functions.save_data import export_to_csv, export_to_db
 
 logger = logging.getLogger(__name__)
+
+# Finviz serves anonymous users only the first 1000 rows of a screen: any page
+# past r=1000 is a Cloudflare 403. Rows beyond it are reached by reading the
+# screen in the reverse sort order.
+MAX_REACHABLE_ROWS = 1000
 
 TABLE_TYPES = {
     "Overview": "111",
@@ -469,6 +474,55 @@ class Screener(object):
                 break
         return list(rows_by_number.values())
 
+    def __scrape_rows(self, url, rows, label=""):
+        """ Returns the first `rows` rows of the screen at `url`, page by page. """
+        page_urls = scrape.get_page_urls(self._page_content, rows, url)
+        data = []
+        for page_number, page_url in enumerate(page_urls, 1):
+            logger.info(f"Scraping page {page_number}/{len(page_urls)}{label}")
+            data.extend(self.__scrape_page(page_url))
+        return data[:rows]
+
+    def __scrape_past_row_cap(self):
+        """
+        Returns every row of a screen longer than MAX_REACHABLE_ROWS.
+
+        The first MAX_REACHABLE_ROWS rows are read in the requested order and
+        the rest from the top of the reverse order, then reversed back and
+        appended. Rows are de-duplicated by ticker and renumbered. Rows whose
+        sort value is blank sort last in both directions, so when they fall
+        outside both windows they are lost; that shortfall is logged.
+        """
+        tail = self._total_rows - MAX_REACHABLE_ROWS
+        if tail > MAX_REACHABLE_ROWS:
+            raise RowCapExceeded(self._total_rows, MAX_REACHABLE_ROWS)
+
+        logger.info(
+            f"Screen has {self._total_rows} rows; reading the last {tail} in reverse order "
+            f"to get past Finviz's {MAX_REACHABLE_ROWS}-row cap"
+        )
+        head = self.__scrape_rows(self._url, MAX_REACHABLE_ROWS)
+        reverse_url = _with_order(self._url, _reversed_order(self._order))
+        tail_rows = self.__scrape_rows(reverse_url, tail, " (reverse order)")
+
+        rows_by_ticker = {}
+        for row in head + tail_rows[::-1]:
+            rows_by_ticker.setdefault(row.get("Ticker") or id(row), row)
+        data = list(rows_by_ticker.values())
+        for number, row in enumerate(data, 1):
+            if "No." in row:
+                row["No."] = str(number)
+
+        if len(data) < self._total_rows:
+            logger.warning(
+                f"Fetched {len(data)} of {self._total_rows} rows: the two sort directions "
+                f"overlapped. Finviz sorts rows with a blank '{self._order or 'ticker'}' last "
+                f"in both directions, so they can't be reached past the "
+                f"{MAX_REACHABLE_ROWS}-row cap (ties or a screen that changed between "
+                f"requests do the same)"
+            )
+        return data[: self._rows]
+
     def __search_screener(self):
         """ Private function used to return data from the FinViz screener. """
 
@@ -488,15 +542,27 @@ class Screener(object):
 
         self._rows = self.__check_rows()
 
-        page_urls = scrape.get_page_urls(self._page_content, self._rows, self._url)
-        data = []
-        for page_number, page_url in enumerate(page_urls, 1):
-            logger.info(f"Scraping page {page_number}/{len(page_urls)}")
-            data.extend(self.__scrape_page(page_url))
-        data = data[: self._rows]
+        if self._rows <= MAX_REACHABLE_ROWS:
+            data = self.__scrape_rows(self._url, self._rows)
+        else:
+            data = self.__scrape_past_row_cap()
         self.headers = list(dict.fromkeys(header for row in data for header in row))
 
         return data
+
+
+def _reversed_order(order):
+    """ Returns the opposite sort order; Finviz's default order is by ticker. """
+    order = order or "ticker"
+    return order[1:] if order.startswith("-") else f"-{order}"
+
+
+def _with_order(url, order):
+    """ Returns the screener url with its `o=` sort order replaced. """
+    parts = urlparse(url)
+    query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True) if key != "o"]
+    query.append(("o", order))
+    return urlunparse(parts._replace(query=urlencode(query, safe=",")))
 
 
 def _with_columns(url, columns):
