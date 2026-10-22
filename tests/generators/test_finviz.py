@@ -6,6 +6,7 @@ from earningspy.generators.finviz.data import (
     get_by_earnings_date,
     get_by_tickers,
 )
+from earningspy.generators.finviz.helper_functions.error_handling import FinvizColumnMismatch
 from earningspy.generators.finviz.helper_functions.scraper_functions import get_table
 from earningspy.generators.finviz.screener import Screener
 from tests.utils.fixtures import screener_mock_data
@@ -58,7 +59,6 @@ def mock_finviz_requests(monkeypatch):
         return list(mock_data)
 
     monkeypatch.setattr(Screener, 'init_from_url', fake_init_from_url)
-    monkeypatch.setattr(finviz_data_module.warnings, 'warn', lambda *args, **kwargs: None)
 
 
 @pytest.mark.parametrize("filters", [
@@ -180,3 +180,41 @@ def test_format_percent_scales_values(raw, expected):
 def test_format_percent_missing_is_nan(raw):
     from earningspy.generators.finviz.utils import _format_percent
     assert np.isnan(_format_percent(raw))
+
+
+def test_fetch_fails_when_header_labels_stop_matching(monkeypatch):
+    """The 2026-10 short-label regression: values filed under "Market CapMkt Cap"
+    left Market Cap missing on every row. The fetch must fail, not return NaNs."""
+    def relabelled(*args, **kwargs):
+        rows = []
+        for row in screener_mock_data():
+            row = dict(row)
+            row["Market CapMkt Cap"] = row.pop("Market Cap")
+            row["Short FloatShort Flt"] = row.pop("Short Float")
+            rows.append(row)
+        return rows
+
+    monkeypatch.setattr(Screener, "init_from_url", relabelled)
+
+    with pytest.raises(FinvizColumnMismatch, match="Market Cap") as excinfo:
+        _get_screener_data(filter_string="earningsdate_thismonth")
+    assert excinfo.value.columns == ["Market Cap", "Short Float"]
+
+
+def test_dash_values_do_not_count_as_missing(monkeypatch):
+    """A column Finviz renders as "-" for every row (e.g. no dividend payers) is
+    present, so it must not trip the check."""
+    def no_dividends(*args, **kwargs):
+        return [dict(row, Dividend="-") for row in screener_mock_data()[:3]]
+
+    monkeypatch.setattr(Screener, "init_from_url", no_dividends)
+
+    data = _get_screener_data(full_query_url="https://finviz.com/screener.ashx?t=A,B,C")
+    assert data["Dividend"].isna().all()
+
+
+def test_known_absent_columns_are_exempt():
+    from earningspy.generators.finviz.constants import FINVIZ_KNOWN_ABSENT_COLUMNS
+    assert "Return% 1Y" in FINVIZ_KNOWN_ABSENT_COLUMNS
+    assert "Return% 1Y" not in screener_mock_data()[0]  # absent, yet the fetch succeeds
+    _get_screener_data(filter_string="earningsdate_thismonth")
