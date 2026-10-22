@@ -124,8 +124,10 @@ def get_table_headers(page_content):
 
     headers = []
     for header_element in header_elements:
+        # Grid headers hold both a full and a short label; read the full one.
         # normalize-space extracts the text while ignoring internal elements
-        header_text = header_element.xpath("normalize-space()")
+        labels = header_element.cssselect(SCRAPING_SELECTORS['grid_header_label'])
+        header_text = (labels[0] if labels else header_element).xpath("normalize-space()")
         if header_text:
             headers.append(SCRAPED_HEADER_ALIASES.get(header_text, header_text))
     return headers
