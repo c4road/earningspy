@@ -76,3 +76,15 @@ class RowCapExceeded(Exception):
             f"Screen has {total_rows} rows, but Finviz serves anonymous users only the "
             f"first {cap} rows in each sort direction ({2 * cap} total). Narrow the filters."
         )
+
+
+class FinvizColumnMismatch(Exception):
+    """ Raise when requested Finviz columns come back missing for every row. """
+
+    def __init__(self, columns):
+        self.columns = columns
+        super(FinvizColumnMismatch, self).__init__(
+            f"Finviz column mismatch: {len(columns)} column(s) missing from every row: "
+            f"{columns}. Finviz likely renamed, removed or re-labelled them. Check the "
+            f"grid header parsing, FINVIZ_COLUMN_RENAMES and CUSTOM_TABLE_ALL_FIELDS_NEW."
+        )

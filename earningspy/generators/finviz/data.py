@@ -26,7 +26,6 @@ This will show detailed logs including:
 """
 
 import logging
-import warnings
 import pandas as pd
 from urllib.parse import parse_qs, unquote_plus, urlparse
 from earningspy.generators.finviz.screener import Screener
@@ -38,7 +37,9 @@ from earningspy.generators.finviz.constants import (
     TICKER_KEY,
     VALID_SCOPES_EARNING_SCOPES,
     FINVIZ_COLUMN_RENAMES,
+    FINVIZ_KNOWN_ABSENT_COLUMNS,
 )
+from earningspy.generators.finviz.helper_functions.error_handling import FinvizColumnMismatch
 from earningspy.generators.finviz.utils import finviz_data_preprocessor
 
 logger = logging.getLogger(__name__)
@@ -125,14 +126,14 @@ def _get_screener_data(filter_string=None, sort_column='marketcap', full_query_u
                 ticker_data.loc[key, ticker] = value
         data = pd.concat([data, ticker_data], axis=1)
 
-    missing = [col for col in CUSTOM_TABLE_ALL_FIELDS_NEW if data.loc[col].isna().all()]
+    # A raw value Finviz shows as "-" is still the string "-" here; NaN means
+    # the column's header label never matched, so it is missing on every row.
+    # An empty screen has no rows to judge by.
+    missing = [col for col in CUSTOM_TABLE_ALL_FIELDS_NEW
+               if col not in FINVIZ_KNOWN_ABSENT_COLUMNS and data.loc[col].isna().all()
+               ] if data.shape[1] else []
     if missing:
-        logger.warning(
-            f"Finviz column mismatch detected. "
-            f"The following columns are entirely NaN: {missing}. "
-            f"Finviz may have renamed or removed them. "
-            f"Check FINVIZ_COLUMN_RENAMES and update CUSTOM_TABLE_ALL_FIELDS_NEW."
-        )
+        raise FinvizColumnMismatch(missing)
 
     return finviz_data_preprocessor(data)
 

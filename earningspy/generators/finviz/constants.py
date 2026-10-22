@@ -280,6 +280,13 @@ FINVIZ_COLUMN_RENAMES = {
     'Forward P/E': 'Fwd P/E',
 }
 
+# Requested columns Finviz no longer renders. They are exempt from the
+# all-missing check in data.py, which otherwise fails the fetch.
+#   2026-10: column 120 ("Return% 1Y") no longer exists on the grid screener.
+FINVIZ_KNOWN_ABSENT_COLUMNS = {
+    'Return% 1Y',
+}
+
 # Grid-screener header labels mapped back to the table-screener labels the
 # rest of the package keys on.
 SCRAPED_HEADER_ALIASES = {
