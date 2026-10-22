@@ -14,6 +14,9 @@ SCRAPING_SELECTORS = {
     'grid_rows': 'div.fv-table_row',
     'grid_cells': '[role="gridcell"]',
     'grid_headers': '[role="columnheader"]',
+    # Full label inside a grid header; the header also carries a short label
+    # (fv-table_header-label-short, e.g. "Mkt Cap") since 2026-10.
+    'grid_header_label': '.fv-table_header-label',
     
     # Analyst ratings table
     'analyst_ratings_table': 'table[class="fullview-ratings-outer"]',
