@@ -75,6 +75,35 @@ def test_get_table_parses_grid_rows_and_bare_ticker():
     assert rows == [{"No.": "1", "Ticker": "GOOGL", "Price": "346.77", "Change": "1.30%"}]
 
 
+def test_get_table_headers_reads_full_label_not_short_label():
+    """Since 2026-10 each grid header carries a short label next to the full one;
+    reading all its text gave "Market CapMkt Cap" and emptied the column."""
+    page = _grid_page([("row", "No."), ("marketCap", "Market Cap"), ("volume", "Volume")], [["1", "3.2B", "100"]])
+    page = page.replace(
+        '<span class="fv-table_header-label">Market Cap</span>',
+        '<span class="fv-table_header-label">Market Cap</span><span class="fv-table_header-label-short">Mkt Cap</span>',
+    )
+
+    headers = get_table_headers(html.fromstring(page))
+
+    assert headers == ["No.", "Market Cap", "Volume"]
+    assert get_table(page, headers, 1) == [{"No.": "1", "Market Cap": "3.2B", "Volume": "100"}]
+
+
+def test_recorded_page_with_short_labels_maps_to_field_names():
+    """A real 2026-10-21 response whose headers carry short labels."""
+    with open(os.path.join(GRID_FIXTURES, "page1_c1_short_labels.html")) as f:
+        page = f.read()
+
+    headers = get_table_headers(html.fromstring(page))
+    rows = get_table(page, headers, 3)
+
+    assert len(headers) == 36
+    assert set(headers) - {"No."} <= set(CUSTOM_TABLE_ALL_FIELDS_NEW), set(headers) - set(CUSTOM_TABLE_ALL_FIELDS_NEW)
+    assert {"Market Cap", "Forward P/E", "Short Float"} <= set(headers)
+    assert all(row["Market Cap"] not in ("", None) for row in rows)
+
+
 def test_get_table_raises_on_grid_column_misalignment():
     page = _grid_page([("row", "No."), ("price", "Price")], [["1", "346.77"]])
     page = page.replace('role="gridcell" data-column-id="price"', 'role="gridcell" data-column-id="change"')
