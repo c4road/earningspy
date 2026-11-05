@@ -39,7 +39,12 @@ from earningspy.generators.finviz.constants import (
     FINVIZ_COLUMN_RENAMES,
     FINVIZ_KNOWN_ABSENT_COLUMNS,
 )
-from earningspy.generators.finviz.helper_functions.error_handling import FinvizColumnMismatch
+from earningspy.generators.finviz.helper_functions.error_handling import (
+    FinvizColumnMismatch,
+    FinvizPartitionShortfall,
+    NoResults,
+    RowCapExceeded,
+)
 from earningspy.generators.finviz.utils import finviz_data_preprocessor
 
 logger = logging.getLogger(__name__)
@@ -88,6 +93,41 @@ def _format_finviz_url_for_logging(full_query_url):
     return "\n".join(lines)
 
 
+EXCHANGE_FILTERS = ("exch_nasd", "exch_nyse", "exch_amex")
+MAX_UNREACHED_ROW_SHARE = 0.01
+
+
+def _fetch_by_exchange(filter_string, sort_column, total_rows, session):
+    """Fetch a screen too long for one request by reading each exchange on its own.
+
+    Finviz lists a few names on no exchange its filter offers, so a small shortfall is
+    logged. A larger one means the partition no longer covers the screen, and it raises
+    rather than return a silently partial universe.
+    """
+    rows_by_ticker = {}
+    for exchange in EXCHANGE_FILTERS:
+        url = _screener_url(f"{filter_string},{exchange}", sort_column)
+        try:
+            stocks = Screener.init_from_url(url, session=session)
+        except NoResults:
+            continue
+        for stock in stocks:
+            rows_by_ticker.setdefault(stock.get(TICKER_KEY), stock)
+
+    rows = list(rows_by_ticker.values())
+    missing = total_rows - len(rows)
+    if missing > MAX_UNREACHED_ROW_SHARE * total_rows:
+        raise FinvizPartitionShortfall(filter_string, len(rows), total_rows)
+    if missing > 0:
+        logger.warning(f"Fetched {len(rows)} of {total_rows} rows of {filter_string}: "
+                       f"{missing} are on no exchange the filter offers")
+    return rows
+
+
+def _screener_url(filter_param, sort_column):
+    return f"https://finviz.com/screener.ashx?v=152&f={filter_param}&{CUSTOM_TABLE_FIELDS_ON_URL}&o={sort_column}"
+
+
 def _get_screener_data(filter_string=None, sort_column='marketcap', full_query_url=None, log_url=False):
     """Fetch screener data from Finviz with connection pooling and timeout.
 
@@ -103,7 +143,7 @@ def _get_screener_data(filter_string=None, sort_column='marketcap', full_query_u
     if not full_query_url:
         filter_param = filter_string or ""
         custom_fields = CUSTOM_TABLE_FIELDS_ON_URL
-        full_query_url = f"https://finviz.com/screener.ashx?v=152&f={filter_param}&{custom_fields}&o={sort_column}"
+        full_query_url = _screener_url(filter_param, sort_column)
 
     if log_url:
         logger.info(_format_finviz_url_for_logging(full_query_url))
@@ -112,7 +152,13 @@ def _get_screener_data(filter_string=None, sort_column='marketcap', full_query_u
     
     session = _create_session()
     try:
-        stock_list = Screener.init_from_url(full_query_url, session=session)
+        try:
+            stock_list = Screener.init_from_url(full_query_url, session=session)
+        except RowCapExceeded as exceeded:
+            if not filter_string:
+                raise
+            logger.info(f"{exceeded} Reading each exchange on its own")
+            stock_list = _fetch_by_exchange(filter_string, sort_column, exceeded.total_rows, session)
         logger.info(f"Fetched {len(stock_list)} stocks from Finviz")
     finally:
         session.close()

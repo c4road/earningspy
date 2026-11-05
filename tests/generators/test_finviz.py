@@ -7,7 +7,7 @@ from earningspy.generators.finviz.data import (
     get_by_earnings_date,
     get_by_tickers,
 )
-from earningspy.generators.finviz.helper_functions.error_handling import FinvizColumnMismatch
+from earningspy.generators.finviz.helper_functions.error_handling import FinvizColumnMismatch, NoResults
 from earningspy.generators.finviz.helper_functions.scraper_functions import get_table
 from earningspy.generators.finviz.screener import Screener
 from tests.utils.fixtures import screener_mock_data
@@ -198,6 +198,44 @@ def test_percent_conversion_scales_once(column, raw, expected):
     data.loc[column, "AAA"] = raw
     converted = _convert_percent_columns(data)
     assert float(converted.loc[column, "AAA"]) == pytest.approx(expected)
+
+
+def _exchange_screens(by_exchange, total_rows):
+    """A screen over the row cap as a whole, served exchange by exchange."""
+    from earningspy.generators.finviz.helper_functions.error_handling import RowCapExceeded
+
+    def fake(url, *args, **kwargs):
+        for exchange, rows in by_exchange.items():
+            if exchange in url:
+                if not rows:
+                    raise NoResults("empty")
+                return rows
+        raise RowCapExceeded(total_rows, 1000)
+    return fake
+
+
+def test_a_screen_over_the_cap_is_read_by_exchange(monkeypatch):
+    rows = [dict(r) for r in screener_mock_data()]
+    nasd, nyse = rows[:1], rows[1:]
+    fake = _exchange_screens({"exch_nasd": nasd, "exch_nyse": nyse + nasd, "exch_amex": []}, len(rows))
+    monkeypatch.setattr(Screener, "init_from_url", fake)
+    got = _get_screener_data(filter_string="earningsdate_thismonth")
+    assert sorted(got.index) == sorted(r["Ticker"] for r in rows)
+
+
+def test_a_partition_that_misses_too_many_rows_raises(monkeypatch):
+    from earningspy.generators.finviz.helper_functions.error_handling import FinvizPartitionShortfall
+    rows = [dict(r) for r in screener_mock_data()]
+    monkeypatch.setattr(Screener, "init_from_url", _exchange_screens({"exch_nasd": rows, "exch_nyse": [], "exch_amex": []}, 2000))
+    with pytest.raises(FinvizPartitionShortfall, match="2000"):
+        _get_screener_data(filter_string="earningsdate_thismonth")
+
+
+def test_a_full_url_over_the_cap_still_raises(monkeypatch):
+    from earningspy.generators.finviz.helper_functions.error_handling import RowCapExceeded
+    monkeypatch.setattr(Screener, "init_from_url", _exchange_screens({}, 2045))
+    with pytest.raises(RowCapExceeded):
+        _get_screener_data(full_query_url="https://finviz.com/screener.ashx?v=152&f=x")
 
 
 def test_fetch_fails_when_header_labels_stop_matching(monkeypatch):

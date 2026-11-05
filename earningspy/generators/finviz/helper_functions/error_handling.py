@@ -72,9 +72,19 @@ class RowCapExceeded(Exception):
     """ Raise when a screen has more rows than Finviz lets anonymous users reach. """
 
     def __init__(self, total_rows, cap):
+        self.total_rows = total_rows
         super(RowCapExceeded, self).__init__(
             f"Screen has {total_rows} rows, but Finviz serves anonymous users only the "
             f"first {cap} rows in each sort direction ({2 * cap} total). Narrow the filters."
+        )
+
+
+class FinvizPartitionShortfall(Exception):
+    """ Raise when reading a long screen exchange by exchange misses too many of its rows. """
+
+    def __init__(self, filter_string, fetched, total_rows):
+        super(FinvizPartitionShortfall, self).__init__(
+            f"Screen {filter_string} has {total_rows} rows, but its exchanges returned only {fetched}."
         )
 
 
