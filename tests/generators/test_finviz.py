@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import pandas as pd
 import earningspy.generators.finviz.data as finviz_data_module
 from earningspy.generators.finviz.data import (
     _get_screener_data,
@@ -180,6 +181,23 @@ def test_format_percent_scales_values(raw, expected):
 def test_format_percent_missing_is_nan(raw):
     from earningspy.generators.finviz.utils import _format_percent
     assert np.isnan(_format_percent(raw))
+
+
+def test_no_percent_column_is_listed_twice():
+    """The list is applied once per entry, so a repeated column is scaled twice."""
+    from earningspy.generators.finviz.constants import PERCENTAJE_COLUMNS
+    assert len(PERCENTAJE_COLUMNS) == len(set(PERCENTAJE_COLUMNS))
+
+
+@pytest.mark.parametrize("column", ["Perf Quart", "Payout Ratio", "Profit M", "Oper M"])
+@pytest.mark.parametrize("raw, expected", [("125.00%", 1.25), ("-340.50%", -3.405), ("0.83%", 0.0083), ("41.00%", 0.41)])
+def test_percent_conversion_scales_once(column, raw, expected):
+    from earningspy.generators.finviz.utils import _convert_percent_columns
+    from earningspy.generators.finviz.constants import PERCENTAJE_COLUMNS
+    data = pd.DataFrame({"AAA": {c: "1.00%" for c in PERCENTAJE_COLUMNS}})
+    data.loc[column, "AAA"] = raw
+    converted = _convert_percent_columns(data)
+    assert float(converted.loc[column, "AAA"]) == pytest.approx(expected)
 
 
 def test_fetch_fails_when_header_labels_stop_matching(monkeypatch):
