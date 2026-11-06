@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -7,7 +9,7 @@ from earningspy.generators.finviz.data import (
     get_by_earnings_date,
     get_by_tickers,
 )
-from earningspy.generators.finviz.helper_functions.error_handling import FinvizColumnMismatch
+from earningspy.generators.finviz.helper_functions.error_handling import FinvizColumnMismatch, NoResults
 from earningspy.generators.finviz.helper_functions.scraper_functions import get_table
 from earningspy.generators.finviz.screener import Screener
 from tests.utils.fixtures import screener_mock_data
@@ -200,6 +202,44 @@ def test_percent_conversion_scales_once(column, raw, expected):
     assert float(converted.loc[column, "AAA"]) == pytest.approx(expected)
 
 
+def _exchange_screens(by_exchange, total_rows):
+    """A screen over the row cap as a whole, served exchange by exchange."""
+    from earningspy.generators.finviz.helper_functions.error_handling import RowCapExceeded
+
+    def fake(url, *args, **kwargs):
+        for exchange, rows in by_exchange.items():
+            if exchange in url:
+                if not rows:
+                    raise NoResults("empty")
+                return rows
+        raise RowCapExceeded(total_rows, 1000)
+    return fake
+
+
+def test_a_screen_over_the_cap_is_read_by_exchange(monkeypatch):
+    rows = [dict(r) for r in screener_mock_data()]
+    nasd, nyse = rows[:1], rows[1:]
+    fake = _exchange_screens({"exch_nasd": nasd, "exch_nyse": nyse + nasd, "exch_amex": []}, len(rows))
+    monkeypatch.setattr(Screener, "init_from_url", fake)
+    got = _get_screener_data(filter_string="earningsdate_thismonth")
+    assert sorted(got.index) == sorted(r["Ticker"] for r in rows)
+
+
+def test_a_partition_that_misses_too_many_rows_raises(monkeypatch):
+    from earningspy.generators.finviz.helper_functions.error_handling import FinvizPartitionShortfall
+    rows = [dict(r) for r in screener_mock_data()]
+    monkeypatch.setattr(Screener, "init_from_url", _exchange_screens({"exch_nasd": rows, "exch_nyse": [], "exch_amex": []}, 2000))
+    with pytest.raises(FinvizPartitionShortfall, match="2000"):
+        _get_screener_data(filter_string="earningsdate_thismonth")
+
+
+def test_a_full_url_over_the_cap_still_raises(monkeypatch):
+    from earningspy.generators.finviz.helper_functions.error_handling import RowCapExceeded
+    monkeypatch.setattr(Screener, "init_from_url", _exchange_screens({}, 2045))
+    with pytest.raises(RowCapExceeded):
+        _get_screener_data(full_query_url="https://finviz.com/screener.ashx?v=152&f=x")
+
+
 def test_fetch_fails_when_header_labels_stop_matching(monkeypatch):
     """The 2026-10 short-label regression: values filed under "Market CapMkt Cap"
     left Market Cap missing on every row. The fetch must fail, not return NaNs."""
@@ -236,3 +276,30 @@ def test_known_absent_columns_are_exempt():
     assert "Return% 1Y" in FINVIZ_KNOWN_ABSENT_COLUMNS
     assert "Return% 1Y" not in screener_mock_data()[0]  # absent, yet the fetch succeeds
     _get_screener_data(filter_string="earningsdate_thismonth")
+
+
+@pytest.mark.parametrize("use_session", [True, False])
+def test_finviz_requests_verify_the_tls_certificate(use_session):
+    """Every value in the screen comes from this response, so the connection must be authenticated."""
+    from earningspy.generators.finviz.helper_functions import request_functions as rf
+
+    response = MagicMock(text="<html></html>", url="https://finviz.com", status_code=200)
+    session = MagicMock()
+    session.get.return_value = response
+    with patch.object(rf, "_create_session", return_value=session):
+        rf.http_request_get("https://finviz.com/screener.ashx", session=session if use_session else None)
+
+    assert session.get.call_args.kwargs.get("verify", True) is True
+    assert session.verify is not False
+
+
+def test_certificate_failure_is_raised_not_ignored():
+    import requests
+
+    from earningspy.generators.finviz.helper_functions import request_functions as rf
+    from earningspy.generators.finviz.helper_functions.error_handling import ConnectionTimeout
+
+    session = MagicMock()
+    session.get.side_effect = requests.exceptions.SSLError("certificate verify failed")
+    with pytest.raises(ConnectionTimeout):
+        rf.http_request_get("https://finviz.com/screener.ashx", session=session)
