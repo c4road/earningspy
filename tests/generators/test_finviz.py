@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -274,3 +276,30 @@ def test_known_absent_columns_are_exempt():
     assert "Return% 1Y" in FINVIZ_KNOWN_ABSENT_COLUMNS
     assert "Return% 1Y" not in screener_mock_data()[0]  # absent, yet the fetch succeeds
     _get_screener_data(filter_string="earningsdate_thismonth")
+
+
+@pytest.mark.parametrize("use_session", [True, False])
+def test_finviz_requests_verify_the_tls_certificate(use_session):
+    """Every value in the screen comes from this response, so the connection must be authenticated."""
+    from earningspy.generators.finviz.helper_functions import request_functions as rf
+
+    response = MagicMock(text="<html></html>", url="https://finviz.com", status_code=200)
+    session = MagicMock()
+    session.get.return_value = response
+    with patch.object(rf, "_create_session", return_value=session):
+        rf.http_request_get("https://finviz.com/screener.ashx", session=session if use_session else None)
+
+    assert session.get.call_args.kwargs.get("verify", True) is True
+    assert session.verify is not False
+
+
+def test_certificate_failure_is_raised_not_ignored():
+    import requests
+
+    from earningspy.generators.finviz.helper_functions import request_functions as rf
+    from earningspy.generators.finviz.helper_functions.error_handling import ConnectionTimeout
+
+    session = MagicMock()
+    session.get.side_effect = requests.exceptions.SSLError("certificate verify failed")
+    with pytest.raises(ConnectionTimeout):
+        rf.http_request_get("https://finviz.com/screener.ashx", session=session)

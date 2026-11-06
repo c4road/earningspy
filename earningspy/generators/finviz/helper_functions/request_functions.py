@@ -5,7 +5,6 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 import tenacity
-import urllib3
 from lxml import html
 from requests import Response
 from requests.adapters import HTTPAdapter
@@ -16,7 +15,6 @@ from earningspy.generators.finviz.config import connection_settings
 from earningspy.generators.finviz.constants import FINVIZ_HEADERS
 from earningspy.generators.finviz.helper_functions.error_handling import ConnectionTimeout
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +84,6 @@ def http_request_get(
             content = session.get(
                 url,
                 params=payload,
-                verify=False,
                 headers=FINVIZ_HEADERS,
                 timeout=timeout,
             )
@@ -97,7 +94,6 @@ def http_request_get(
                 content = fallback_session.get(
                     url,
                     params=payload,
-                    verify=False,
                     headers=FINVIZ_HEADERS,
                     timeout=timeout,
                 )
