@@ -303,3 +303,72 @@ def test_certificate_failure_is_raised_not_ignored():
     session.get.side_effect = requests.exceptions.SSLError("certificate verify failed")
     with pytest.raises(ConnectionTimeout):
         rf.http_request_get("https://finviz.com/screener.ashx", session=session)
+
+
+class TestProcess52Range:
+    """A '52W Range' of '-' (no 52-week history, e.g. a recent listing) is missing, not an error."""
+
+    def test_bare_dash_is_missing_on_both_sides(self):
+        from earningspy.generators.finviz.utils import _process_52_high, _process_52_low
+        assert np.isnan(_process_52_high("-"))
+        assert np.isnan(_process_52_low("-"))
+
+    def test_full_range_still_parses(self):
+        from earningspy.generators.finviz.utils import _process_52_high, _process_52_low
+        assert _process_52_high("10.5 - 15.2") == 15.2
+        assert _process_52_low("10.5 - 15.2") == 10.5
+
+    def test_frame_with_a_dash_row_processes(self):
+        from earningspy.generators.finviz.utils import _process_52_high_low
+        df = pd.DataFrame({"AAA": ["10.5 - 15.2"], "PORT": ["-"]}, index=["52W Range"])
+        out = _process_52_high_low(df)
+        assert out.loc["52W High", "AAA"] == 15.2
+        assert np.isnan(out.loc["52W High", "PORT"])
+
+
+class TestEarningsDateYear:
+    """Finviz shows 'Mon DD' with no year: the year is the one closest to today."""
+
+    def test_same_year(self):
+        from earningspy.generators.finviz.utils import _closest_year_date
+        assert _closest_year_date("Nov 20", today="2026-11-16") == pd.Timestamp("2026-11-20")
+
+    def test_january_read_in_late_december_is_next_year(self):
+        from earningspy.generators.finviz.utils import _closest_year_date
+        assert _closest_year_date("Jan 04", today="2026-12-28") == pd.Timestamp("2027-01-04")
+
+    def test_december_read_in_early_january_is_last_year(self):
+        from earningspy.generators.finviz.utils import _closest_year_date
+        assert _closest_year_date("Dec 30", today="2027-01-03") == pd.Timestamp("2026-12-30")
+
+    def test_label_with_a_year_is_kept(self):
+        from earningspy.generators.finviz.utils import _closest_year_date
+        assert _closest_year_date("Jan 15 2028", today="2026-11-16") == pd.Timestamp("2028-01-15")
+
+
+# One row Finviz sends in a shape no parser expects: the screen must still process, the odd
+# values become NaN, and every other row is unchanged.
+_MALFORMED = {
+    "52W Range": "-", "Market Cap": "n/a", "Income": None, "Sales": "1.2T",
+    "Volume": "12x", "Avg Volume": None, "Index": None, "Earnings": "soon",
+    "Dividend Ex Date": "13/45/2026", "Country": None, "EPS": "abc", "Perf Week": "x%",
+}
+
+
+def test_one_malformed_row_never_fails_the_screen(monkeypatch):
+    rows = [dict(r) for r in screener_mock_data()]
+    clean = _get_screener_data_from(monkeypatch, rows)
+    odd = dict(rows[0], **_MALFORMED)
+    got = _get_screener_data_from(monkeypatch, [odd] + rows[1:])
+
+    ticker = rows[0]["Ticker"]
+    for col in ("Market Cap", "Volume", "IS_S&P500", "IS_AMC", "EARNINGS_DATE", "52W_NORM"):
+        assert pd.isna(got.loc[ticker, col]), col
+    assert got.loc[ticker, "Sales"] == pytest.approx(1.2e12)  # trillions parse
+    others = [r["Ticker"] for r in rows[1:]]
+    pd.testing.assert_frame_equal(got.loc[others], clean.loc[others])
+
+
+def _get_screener_data_from(monkeypatch, rows):
+    monkeypatch.setattr(Screener, "init_from_url", lambda *a, **k: list(rows))
+    return _get_screener_data(filter_string="earningsdate_thismonth")

@@ -73,6 +73,19 @@ def _process_money_value(value):
         return value
     elif type(value) == int:
         return float(value)
+    elif not isinstance(value, str):
+        return np.nan
+    try:
+        return _parse_money_string(value.strip())
+    except ValueError:
+        logger.warning(f"Unparseable money value {value!r} -> NaN")
+        return np.nan
+
+
+def _parse_money_string(value):
+    """Parse a Finviz abbreviated amount ('1.5B', '500M', '10K', '2.1T', '-')."""
+    if value.endswith('T'):
+        return float(value[:-1]) * 1_000_000_000_000
     else:
         if value.endswith('B'):
             value = float(value.strip('B'))
@@ -89,7 +102,7 @@ def _process_money_value(value):
         elif value == '-':
             return float(0.0)
         else:
-            return value
+            return float(value.replace(',', ''))
 
 
 
@@ -214,15 +227,21 @@ def _process_52_high(value):
         15.2
         >>> _process_52_high("10.5 - -")
         0.0
+        >>> _process_52_high("-")  # no 52-week history (recent listing)
+        nan
     """
     if isinstance(value, float):
         return value
     elif isinstance(value, str):
         high_low = value.split(' - ')
+        if len(high_low) < 2:
+            return np.nan
         if high_low[1] == '-':
             return float(0.0)
-        elif high_low[1] != '-':
+        try:
             return float(high_low[1])
+        except ValueError:
+            return np.nan
     return np.nan
 
 
@@ -243,15 +262,22 @@ def _process_52_low(value):
         10.5
         >>> _process_52_low("- - 15.2")
         0.0
+        >>> _process_52_low("-")  # no 52-week history (recent listing)
+        nan
     """
     if isinstance(value, float):
         return value
+    if not isinstance(value, str):
+        return np.nan
     high_low = value.split(' - ')
+    if len(high_low) < 2:
+        return np.nan
     if high_low[0] == '-':
         return float(0.0)
-    elif high_low[0] != '-':
+    try:
         return float(high_low[0])
-    return np.nan
+    except ValueError:
+        return np.nan
 
 
 def _process_52_high_low(data, drop=False):
@@ -303,6 +329,8 @@ def _calculate_normalized_52w(row):
     """
     if isinstance(row['52W Range'], float):
         return row['52W Range']
+    if not isinstance(row['52W Range'], str) or ' - ' not in row['52W Range']:
+        return np.nan
 
     range52 = row['52W Range'].split('-')
     if not len(range52):
@@ -343,6 +371,8 @@ def _process_index(row, index):
     """
     if isinstance(row['Index'], int):
         return row['Index']
+    if not isinstance(row['Index'], str):
+        return np.nan
     indexes = row['Index'].replace(' ', '').split(',')
     if index in indexes:
         return 1
@@ -373,6 +403,8 @@ def _process_earnings_time(row, time):
     """
     if isinstance(row['Earnings'], int):
         return row['Earnings']
+    if not isinstance(row['Earnings'], str):
+        return np.nan
     earnings_time = row['Earnings'].split('/')
     if earnings_time == ['-']:
         return np.nan
@@ -611,8 +643,13 @@ def _process_volume(value):
     elif isinstance(value, str):
         if value == '-':
             return 0.0
-        value = value.replace(',','')
-        return float(value)
+        try:
+            return float(value.replace(',', ''))
+        except ValueError:
+            logger.warning(f"Unparseable numeric value {value!r} -> NaN")
+            return np.nan
+    elif value is None:
+        return np.nan
     else:
         return value
 
@@ -662,17 +699,32 @@ def _process_report_date(row):
         Timestamp('2023-01-15 00:00:00')  # with current year
     """
     value = row['Earnings']
+    if not isinstance(value, str):
+        return np.nan
     date_list = value.split('/')
-    if len(date_list) == 1 and type(date_list[0]) == str and date_list[0] != '-':
-        date = date_list[0] + f" {datetime.datetime.now().year}"
-        date = pd.to_datetime(date, format='%b %d %Y')
-    elif len(date_list) == 2:
-        date = date_list[0].split(' ')
-        date = date_list[0] + f" {datetime.datetime.now().year}"
-        date = pd.to_datetime(date, format='%b %d %Y')
-    else:
-        date = np.nan
-    return date
+    if len(date_list) > 2 or date_list[0].strip() in ('', '-'):
+        return np.nan
+    try:
+        return _closest_year_date(date_list[0].strip())
+    except ValueError:
+        logger.warning(f"Unparseable earnings date {value!r} -> NaN")
+        return np.nan
+
+
+def _closest_year_date(month_day, today=None):
+    """
+    Date a Finviz 'Mon DD' earnings label in the year that puts it closest to today.
+
+    Finviz shows no year, so a week that crosses New Year ('Jan 04' read in late December,
+    'Dec 30' read in early January) belongs to the next or the previous year, not the
+    current one. A label that already carries a year ('Jan 15 2027') is parsed as is.
+    """
+    today = pd.Timestamp(today or datetime.datetime.now().date())
+    if len(month_day.split()) == 3:
+        return pd.to_datetime(month_day, format='%b %d %Y')
+    candidates = [pd.to_datetime(f"{month_day} {year}", format='%b %d %Y')
+                  for year in (today.year - 1, today.year, today.year + 1)]
+    return min(candidates, key=lambda date: abs(date - today))
 
 
 def _process_remaning_columns(data):
