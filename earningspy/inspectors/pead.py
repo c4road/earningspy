@@ -62,6 +62,9 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         ]
         self.merged_data: Optional[pd.DataFrame] = None
         self.affected_rows: Optional[pd.DataFrame] = None
+        # Rows whose calendar-day window is still empty: selected apart from affected_rows so the
+        # calendar pass never recomputes (or wipes) a stored business-day window.
+        self.calendar_rows: Optional[pd.DataFrame] = None
 
 
     @staticmethod
@@ -108,6 +111,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self._validate_window(days)
 
         self.affected_rows = self._get_affected_rows(days, post_earnings=post_earnings)
+        self.calendar_rows = self._get_calendar_rows(days, post_earnings=post_earnings)
         if dry_run:
             self.affected_rows = self.affected_rows.reset_index()
             self.affected_rows = self.affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY])
@@ -136,6 +140,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
             raise Exception(f"Provide a column to check for NaNs to do the refresh, must be from this list {AVAILABLE_CHECK_COLUMNS}")
         
         self.affected_rows = self._get_affected_rows(days, check_column=check_column, deep=deep)
+        self.calendar_rows = self._get_calendar_rows(days, deep=deep)
         if dry_run:
             self.affected_rows = self.affected_rows.reset_index()
             self.affected_rows = self.affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY])
@@ -156,7 +161,10 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
     ) -> None:
 
         if not reuse_timeseries:
-            self.price_history = self.fetch_price_history(assets=set(self.affected_rows.index.get_level_values(1).to_list()), async_=async_)
+            tickers = set(self.affected_rows.index.get_level_values(1).to_list())
+            if self.calendar_rows is not None:
+                tickers |= set(self.calendar_rows.index.get_level_values(1).to_list())
+            self.price_history = self.fetch_price_history(assets=tickers, async_=async_)
 
         self.calendar = self.calendar.reset_index()
         self.calendar = self.calendar.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
@@ -196,22 +204,32 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
 
         if not post_earnings:
             try:
-                missing = affected_rows[check_column.format(days)].isna()
-                # The calendar window is computed beside the business-day one: a row stays
-                # eligible while either is still empty (the calendar column may not exist yet).
-                if check_column == ABS_RET_KEY and days in CALENDAR_WINDOWS:
-                    cal_label = CAL_RET_KEY.format(days)
-                    if cal_label in affected_rows.columns:
-                        missing |= affected_rows[cal_label].isna()
-                    else:
-                        missing[:] = True
-                affected_rows = affected_rows[missing]
+                affected_rows = affected_rows[affected_rows[check_column.format(days)].isna()]
             except KeyError:
                 raise Exception(f"Check column {check_column.format(days)} not found in the calendar. Is this post earnings data?"
                        " If so, set post_earnings=True.")
         affected_rows = affected_rows.reset_index()
         affected_rows = affected_rows.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
         return affected_rows
+
+    def _get_calendar_rows(self, days: int, deep: bool = False, post_earnings: bool = False) -> pd.DataFrame:
+        """Rows due for the N-calendar-day window: from N calendar days after the report, retried
+        for 30 more days while it is empty (it closes at the first session after day N). With
+        ``post_earnings`` every row in that range is recomputed; with ``deep`` there is no upper
+        bound. Empty for windows without a calendar variant."""
+        cal = self.calendar
+        if days not in CALENDAR_WINDOWS:
+            rows = cal.iloc[0:0]
+        else:
+            in_range = cal[DAYS_TO_EARNINGS_KEY_CAPITAL] <= -days
+            if not deep:
+                in_range &= cal[DAYS_TO_EARNINGS_KEY_CAPITAL] >= -(days + 30)
+            rows = cal[in_range]
+            label = CAL_RET_KEY.format(days)
+            if not post_earnings and label in rows.columns:
+                rows = rows[rows[label].isna()]
+        rows = rows.reset_index()
+        return rows.set_index([FINVIZ_EARNINGS_DATE_KEY, TICKER_KEY_CAPITAL])
 
 
     def join(
@@ -372,7 +390,7 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         if exit_label not in self.calendar.columns:
             self.calendar[exit_label] = pd.Series(pd.NA, index=self.calendar.index, dtype="object")
 
-        idx = self.affected_rows.index
+        idx = self.calendar_rows.index if self.calendar_rows is not None else self.affected_rows.index[:0]
         if len(idx) == 0:
             return
         rows = self.calendar.loc[idx]

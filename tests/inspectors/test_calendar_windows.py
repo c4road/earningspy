@@ -266,14 +266,37 @@ class TestInspector:
         insp = insp.inspect(days=3, reuse_timeseries=True)
         assert "1+3_CAL_RET" not in insp.calendar.columns
 
-    def test_row_stays_eligible_while_the_calendar_column_is_empty(self):
-        cal = _calendar([40, 41], **{"1+30_RET": [0.01, 0.02], "1+30_CAL_RET": [np.nan, 0.03]})
-        affected = PEADInspector(calendar=cal)._get_affected_rows(30)
-        assert list(affected.index.get_level_values(0)) == [TODAY - pd.Timedelta(days=40)]
+    def test_calendar_rows_are_selected_apart_from_business_day_rows(self):
+        cal = _calendar([40, 41, 75], **{"1+30_RET": [0.01, np.nan, 0.02], "1+30_CAL_RET": [np.nan, 0.03, np.nan]})
+        insp = PEADInspector(calendar=cal)
+        bd = list(insp._get_affected_rows(30).index.get_level_values(0))
+        cal_rows = list(insp._get_calendar_rows(30).index.get_level_values(0))
+        assert bd == [TODAY - pd.Timedelta(days=41)]                      # business-day empty only
+        assert cal_rows == [TODAY - pd.Timedelta(days=40)]                # calendar empty, within 30+30 days
 
-    def test_old_bronze_without_calendar_columns_is_eligible(self):
+    def test_old_bronze_without_calendar_columns_gets_calendar_rows_only(self):
         cal = _calendar([40], **{"1+30_RET": [0.01]})
-        assert len(PEADInspector(calendar=cal)._get_affected_rows(30)) == 1
+        insp = PEADInspector(calendar=cal)
+        assert len(insp._get_affected_rows(30)) == 0 and len(insp._get_calendar_rows(30)) == 1
+
+    def test_calendar_pass_never_touches_a_stored_business_day_window(self):
+        # a delisted ticker: its stored business-day values must survive the calendar pass
+        px = self._closes()
+        cal = _calendar([40], **{"1+30_RET": [0.1234], "CAR_30": [0.1], "BHAR_30": [0.11], "CAPM_30": [0.0234],
+                                 "MARK_EXP_30": [0.0134], "1+30_CAL_RET": [np.nan]})
+        cal["TICKER"] = "GONE"
+        insp = PEADInspector(calendar=cal, price_history=px, open_history=_opens(px)).inspect(
+            days=30, reuse_timeseries=True)
+        row = insp.calendar.reset_index().iloc[0]
+        assert (row["1+30_RET"], row["CAR_30"], row["BHAR_30"]) == (0.1234, 0.1, 0.11)
+        assert pd.isna(row["1+30_CAL_RET"])
+
+    def test_business_day_pass_never_touches_a_stored_calendar_window(self):
+        px = self._closes()
+        cal = _calendar([35], **{"1+30_RET": [np.nan], "1+30_CAL_RET": [0.4321], "30_CAL_EXIT": ["open"]})
+        insp = PEADInspector(calendar=cal, price_history=px, open_history=_opens(px)).inspect(
+            days=30, reuse_timeseries=True)
+        assert insp.calendar.reset_index().iloc[0]["1+30_CAL_RET"] == 0.4321
 
     def test_inspect_logs_a_summary_of_guarded_windows(self, caplog):
         px = self._closes()
