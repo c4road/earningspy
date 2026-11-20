@@ -28,6 +28,16 @@ BHAR_KEY='BHAR_{}'
 DATADATE_KEY='DATADATE'
 ALLOWED_WINDOWS = [3, 30, 60]
 
+# Calendar-day windows, computed beside the business-day ones for these windows only.
+# Start: the close on the trading day before the report. End: the open of the first session
+# after report + N calendar days (the close on or before day N when no open is available).
+CALENDAR_WINDOWS = [30, 60]
+CAL_RET_KEY='1+{}_CAL_RET'
+SPX_CAL_RET_KEY='SPX_{}_CAL_RET'
+CAR_CAL_KEY='CAR_{}_CAL'
+BHAR_CAL_KEY='BHAR_{}_CAL'
+CAL_EXIT_KEY='{}_CAL_EXIT'
+
 AVAILABLE_CHECK_COLUMNS = [
     EXP_RET_KEY,
     ABS_RET_KEY,
@@ -35,6 +45,10 @@ AVAILABLE_CHECK_COLUMNS = [
     CAPM_KEY,
     CAR_KEY,
     BHAR_KEY,
+    CAL_RET_KEY,
+    SPX_CAL_RET_KEY,
+    CAR_CAL_KEY,
+    BHAR_CAL_KEY,
 ]
 
 FIELDS_ORDER = [

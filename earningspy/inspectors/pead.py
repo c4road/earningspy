@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Literal, Optional, Union
 
+import numpy as np
 import pandas as pd
 
 from earningspy.common.constants import (
@@ -19,6 +20,12 @@ from earningspy.common.constants import (
     CAR_KEY,
     BHAR_KEY,
     ALLOWED_WINDOWS,
+    CALENDAR_WINDOWS,
+    CAL_RET_KEY,
+    SPX_CAL_RET_KEY,
+    CAR_CAL_KEY,
+    BHAR_CAL_KEY,
+    CAL_EXIT_KEY,
     AVAILABLE_CHECK_COLUMNS,
     DATADATE_KEY
 )
@@ -36,11 +43,15 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self,
         calendar: Optional[pd.DataFrame] = None,
         price_history: Optional[pd.DataFrame] = None,
+        open_history: Optional[pd.DataFrame] = None,
     ):
 
         self.calendar: pd.DataFrame = self._load_calendar(calendar)
         self.backup = self.calendar.copy()
         self.price_history: Optional[pd.DataFrame] = self._load_price_history(price_history)
+        # Daily opens (same calendar as price_history): the calendar windows exit at an open.
+        # Without them those windows exit at the close on or before day N.
+        self.open_history: Optional[pd.DataFrame] = self._load_price_history(open_history)
 
         self.remaining_data: pd.DataFrame = self.calendar[
             ~(self.calendar[DAYS_TO_EARNINGS_KEY_CAPITAL] < -3)
@@ -154,6 +165,8 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         self._get_windows_car(days=days)
         self._get_windows_bhar(days=days)
         self._get_windows_vix(days=days)
+        if days in CALENDAR_WINDOWS:
+            self._get_calendar_windows(days=days)
 
 
     def _get_affected_rows(
@@ -179,7 +192,16 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
 
         if not post_earnings:
             try:
-                affected_rows = affected_rows[affected_rows[check_column.format(days)].isna()]
+                missing = affected_rows[check_column.format(days)].isna()
+                # The calendar window is computed beside the business-day one: a row stays
+                # eligible while either is still empty (the calendar column may not exist yet).
+                if check_column == ABS_RET_KEY and days in CALENDAR_WINDOWS:
+                    cal_label = CAL_RET_KEY.format(days)
+                    if cal_label in affected_rows.columns:
+                        missing |= affected_rows[cal_label].isna()
+                    else:
+                        missing[:] = True
+                affected_rows = affected_rows[missing]
             except KeyError:
                 raise Exception(f"Check column {check_column.format(days)} not found in the calendar. Is this post earnings data?"
                        " If so, set post_earnings=True.")
@@ -331,6 +353,34 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         ret_label = ABS_RET_KEY.format(days)
         capm_label = CAPM_KEY.format(days)
         self.calendar.loc[self.affected_rows.index, label] = (self.calendar[ret_label] - self.calendar[capm_label]).round(4)
+
+
+    def _get_calendar_windows(self, days: int) -> None:
+        """The N-calendar-day window beside the business-day one: the stock's and the S&P 500's
+        returns over the same dates, CAR and BHAR on the window's expected returns (CAPM_N,
+        MARK_EXP_N, which are calendar-month means for 30 and 60), and the exit basis."""
+        ret_label = CAL_RET_KEY.format(days)
+        exit_label = CAL_EXIT_KEY.format(days)
+        # The columns exist after every run, rows affected or not: the schema never depends on the week.
+        for label in (ret_label, SPX_CAL_RET_KEY.format(days), CAR_CAL_KEY.format(days), BHAR_CAL_KEY.format(days)):
+            if label not in self.calendar.columns:
+                self.calendar[label] = np.nan
+        if exit_label not in self.calendar.columns:
+            self.calendar[exit_label] = pd.Series(pd.NA, index=self.calendar.index, dtype="object")
+
+        idx = self.affected_rows.index
+        if len(idx) == 0:
+            return
+        rows = self.calendar.loc[idx]
+        values = rows.apply(lambda row: self.get_calendar_window(row, days=days), axis=1, result_type="expand")
+        values.columns = ["stock", "spx", "basis"]
+        self.calendar.loc[idx, ret_label] = values["stock"].astype(float)
+        self.calendar.loc[idx, SPX_CAL_RET_KEY.format(days)] = values["spx"].astype(float)
+        self.calendar.loc[idx, exit_label] = values["basis"]
+        self.calendar.loc[idx, CAR_CAL_KEY.format(days)] = (
+            self.calendar.loc[idx, ret_label] - self.calendar.loc[idx, CAPM_KEY.format(days)]).round(4)
+        self.calendar.loc[idx, BHAR_CAL_KEY.format(days)] = (
+            self.calendar.loc[idx, ret_label] - self.calendar.loc[idx, MARK_EXP_KEY.format(days)]).round(4)
 
 
     def _get_windows_bhar(self, days: int) -> None:

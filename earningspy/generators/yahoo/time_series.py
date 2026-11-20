@@ -191,8 +191,12 @@ def _fetch_ticker_data(session, asset, from_='3m', start_date=None, end_date=dt.
     return asset, result_data
 
 
-def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date(), timeout=10, max_workers=10):
+def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date(), timeout=10, max_workers=10,
+                  opens=False):
+    """Daily closes, one column per asset. With ``opens=True`` returns ``(closes, opens)``: the
+    opens come from the same Yahoo response, so they cost no extra request."""
     close_frames = []
+    open_frames = []
     not_found = []
     assets = list(assets)
     seen_assets = set()
@@ -272,6 +276,10 @@ def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date(),
                     continue
 
                 close_frames.append(close_frame)
+                if opens:
+                    open_frame = _open_frame(ticker_data, asset)
+                    if open_frame is not None:
+                        open_frames.append(open_frame)
 
     if not close_frames:
         logger.error(
@@ -283,6 +291,8 @@ def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date(),
 
     portfolio = _finalize_portfolio(close_frames)
     logger.info("Not found assets: %s, %s", len(set(not_found)), sorted(set(not_found)))
+    if opens:
+        return portfolio, _finalize_opens(open_frames, portfolio)
     return portfolio
 
 
@@ -295,3 +305,20 @@ def prepare_data(data, ticker):
     data = data.drop(['open', 'high', 'low', 'volume'], axis=1)
     data = data.rename(columns={"close": ticker})
     return data.round(2)
+
+
+def _open_frame(data, ticker):
+    """The asset's daily opens as a one-column frame, or None when the response has none."""
+    if 'open' not in data.columns:
+        return None
+    try:
+        return _normalize_close_frame(data[['open']].rename(columns={'open': ticker}).round(2), ticker)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _finalize_opens(open_frames, closes):
+    """Opens on the closes' calendar and columns (an asset without opens is an all-NaN column)."""
+    if not open_frames:
+        return pd.DataFrame(index=closes.index, columns=closes.columns, dtype=float)
+    return _finalize_portfolio(open_frames).reindex(index=closes.index, columns=closes.columns)
