@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import Literal, Optional, Union
 
@@ -31,6 +32,9 @@ from earningspy.common.constants import (
 )
 from earningspy.calendars.utils import days_left
 from earningspy.inspectors.mixins import CARMixin, TimeSeriesMixin
+
+
+logger = logging.getLogger(__name__)
 
 
 class PEADInspector(CARMixin, TimeSeriesMixin):
@@ -372,8 +376,18 @@ class PEADInspector(CARMixin, TimeSeriesMixin):
         if len(idx) == 0:
             return
         rows = self.calendar.loc[idx]
+        guarded_before = len(getattr(self, "split_guarded", []))
         values = rows.apply(lambda row: self.get_calendar_window(row, days=days), axis=1, result_type="expand")
         values.columns = ["stock", "spx", "basis"]
+        guarded = self.split_guarded[guarded_before:] if hasattr(self, "split_guarded") else []
+        if guarded:
+            logger.warning(
+                "SPLIT GUARD — %d of %d %d-calendar-day windows left empty this run (micro caps with a "
+                "one-session price jump that looks like an unadjusted reverse split): %s. Each one is "
+                "detailed in its own warning above.",
+                len(guarded), len(idx), days,
+                ", ".join(f"{t} {pd.Timestamp(d).date()}" for t, d, _ in guarded),
+            )
         self.calendar.loc[idx, ret_label] = values["stock"].astype(float)
         self.calendar.loc[idx, SPX_CAL_RET_KEY.format(days)] = values["spx"].astype(float)
         self.calendar.loc[idx, exit_label] = values["basis"]

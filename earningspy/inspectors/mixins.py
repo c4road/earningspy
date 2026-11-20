@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from typing import Iterable, Optional, Union
 
@@ -18,7 +19,13 @@ from earningspy.common.constants import (
     RF_KEY,
     TBILL_10_YEAR,
     VIX_TICKER,
+    MARKET_CAP_KEY,
+    SPLIT_GUARD_JUMP,
+    SPLIT_GUARD_MAX_MARKET_CAP,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class WindowNotClosed(KeyError):
@@ -119,15 +126,32 @@ class CARMixin:
         earnings_ts = self._coerce_price_timestamp(earnings_date)
         start = self._resolve_price_date(earnings_ts - BDay(1), method="pad", fallback_method="backfill")
         day_n = earnings_ts + pd.Timedelta(days=days)
-        index = self.price_history.index
-        after = index[index > day_n]
+        sessions = self._sessions()
+        after = sessions[sessions > day_n]
         if after.empty:
             raise WindowNotClosed(
                 f"calendar window {earnings_ts.date()} + {days}d: no session after {day_n.date()} "
-                f"(last price {index.max().date()})"
+                f"(last session {sessions.max().date() if len(sessions) else None})"
             )
-        last = index[index <= day_n].max()
+        last = sessions[sessions <= day_n].max()
         return start, after[0], last
+
+    def _sessions(self) -> pd.DatetimeIndex:
+        """US trading sessions: the dates the S&P 500 has a close. Yahoo returns rows with no prices
+        on market holidays, and ^VIX prints on some of them (Cboe extended hours), so neither the
+        frame's index nor "any series has a price" is the cash market's calendar. Without the
+        S&P 500 in the frame: the dates on which any series has a price."""
+        frame = self.price_history
+        cached = getattr(self, "_sessions_cache", None)
+        if cached is not None and cached[0] is frame and cached[1] == frame.shape:
+            return cached[2]
+        if SP_500_TICKER in frame.columns and frame[SP_500_TICKER].notna().any():
+            traded = frame[SP_500_TICKER].notna()
+        else:
+            traded = frame.notna().any(axis=1)
+        sessions = frame.index[traded.to_numpy()]
+        self._sessions_cache = (frame, frame.shape, sessions)
+        return sessions
 
     def _open_at(self, ticker: str, session: pd.Timestamp) -> float:
         opens = getattr(self, "open_history", None)
@@ -174,8 +198,63 @@ class CARMixin:
 
         stock_ret, spx_ret = _ret(starts[0], ends[0]), _ret(starts[1], ends[1])
         if pd.isna(stock_ret):
-            return np.nan, spx_ret, None
+            return np.nan, np.nan, None          # the S&P 500 leg only means something beside the stock's
+        exit_at = exit_session if basis == "open" else last
+        jump = self._split_suspect(row, ticker, start, exit_at, ends[0])
+        if jump is not None:
+            self._warn_split_guard(row, ticker, days, start, exit_at, basis, starts[0], ends[0],
+                                   stock_ret, jump)
+            return np.nan, np.nan, None
         return stock_ret, spx_ret, basis
+
+    def _warn_split_guard(self, row, ticker, days, start, exit_at, basis, start_price, exit_price,
+                          stock_ret, jump) -> None:
+        """One WARNING per guarded window, with everything needed to check it by hand."""
+        if not hasattr(self, "split_guarded"):
+            self.split_guarded = []
+        self.split_guarded.append((ticker, pd.Timestamp(row.name[0]), days))
+        cap = pd.to_numeric(row.get(MARKET_CAP_KEY, np.nan), errors="coerce")
+        cap_text = f"${cap / 1e6:,.1f}M" if pd.notna(cap) else "unknown"
+        prev_day, day, before, after, ratio = jump
+        logger.warning(
+            "SPLIT GUARD — %s %d-calendar-day window after the %s report left EMPTY "
+            "(1+%d_CAL_RET, SPX_%d_CAL_RET, CAR_%d_CAL, BHAR_%d_CAL, %d_CAL_EXIT). "
+            "Market cap %s is under the $%.0fM micro-cap limit and the price jumps %.2fx in one session: "
+            "%s %s -> %s %s (%s). Yahoo often leaves a micro cap's reverse split unadjusted across such "
+            "a day, so the window would read %+.1f%% (%s close %.4f -> %s %s %.4f) and that figure is "
+            "not trusted. Check the ticker's split history; a genuine move needs the guard lifted by hand.",
+            ticker, days, pd.Timestamp(row.name[0]).date(), days, days, days, days, days,
+            cap_text, SPLIT_GUARD_MAX_MARKET_CAP / 1e6, ratio,
+            prev_day.date(), f"{before:.4f}", day.date(), f"{after:.4f}",
+            "the exit open" if (basis == "open" and day == exit_at) else "closes",
+            stock_ret * 100, start.date(), start_price, exit_at.date(), basis, exit_price,
+        )
+
+    def _split_suspect(self, row: pd.Series, ticker: str, start: pd.Timestamp, end: pd.Timestamp,
+                       exit_price: float) -> Optional[tuple]:
+        """A micro cap (market cap under SPLIT_GUARD_MAX_MARKET_CAP at the report, or unknown) whose
+        price rises SPLIT_GUARD_JUMP times or more from one session to the next inside the window,
+        the exit price included. Yahoo often leaves a reverse split unadjusted across such a day,
+        which would store a fake multi-fold return; the window is left empty instead.
+
+        Returns the largest jump as (previous session, session, price before, price after, ratio),
+        or None when the window is not suspect."""
+        cap = pd.to_numeric(row.get(MARKET_CAP_KEY, np.nan), errors="coerce")
+        if pd.notna(cap) and cap >= SPLIT_GUARD_MAX_MARKET_CAP:
+            return None
+        sessions = self._sessions()
+        first = sessions[sessions <= start]
+        first = first.max() if len(first) else start
+        span = sessions[(sessions >= first) & (sessions <= end)]
+        path = self.price_history[ticker].ffill().reindex(span)
+        if pd.notna(exit_price) and span.size and span[-1] == end:
+            path.iloc[-1] = exit_price           # an open exit: its gap counts too
+        ratios = (path / path.shift(1)).dropna()
+        if not (ratios >= SPLIT_GUARD_JUMP).any():
+            return None
+        day = ratios.idxmax()
+        prev_day = path.index[path.index.get_loc(day) - 1]
+        return prev_day, day, float(path[prev_day]), float(path[day]), float(ratios[day])
 
 
     def get_capm(self, row: pd.Series, days: int = 0) -> float:
