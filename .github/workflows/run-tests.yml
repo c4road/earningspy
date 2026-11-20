@@ -3,12 +3,11 @@ name: Run Tests
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# PRs only: the merge itself does not re-run the suite (single developer, free-tier minutes).
 on:
   pull_request:
     branches: [master]
-  push:
-    branches:
-      - master
+  workflow_dispatch:
 
 jobs:
   test:
