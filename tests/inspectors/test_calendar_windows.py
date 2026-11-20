@@ -146,6 +146,27 @@ class TestReturns:
         assert stock == _ret(px.at[start, "AAA"], px.at[last, "AAA"])
         assert spx == _ret(px.at[start, "^GSPC"], px.at[last, "^GSPC"])
 
+    def test_prices_that_stop_before_the_exit_give_no_window(self):
+        # delisted mid-window: the last close must not be carried to day N
+        px = _closes("2026-08-01")
+        px.loc[pd.Timestamp("2026-03-20"):, "AAA"] = np.nan
+        stock, spx, basis = _Insp(px, _opens(px)).get_calendar_window(_row(), 30)
+        assert np.isnan(stock) and np.isnan(spx) and basis is None
+
+    def test_no_price_on_the_start_session_gives_no_window(self):
+        # a single stale quote before the report must not serve as the start
+        px = _closes("2026-08-01")
+        px.loc[pd.Timestamp("2026-02-26"):pd.Timestamp("2026-02-27"), "AAA"] = np.nan
+        stock, _, _ = _Insp(px).get_calendar_window(_row(), 30)
+        assert np.isnan(stock)
+
+    def test_start_on_a_holiday_row_uses_the_session_before(self):
+        px = _closes("2026-08-01")
+        px.loc[pd.Timestamp("2026-02-27")] = np.nan                  # the day before the report is closed
+        stock, _, basis = _Insp(px).get_calendar_window(_row(), 30)
+        assert basis == "close"
+        assert stock == _ret(px.at[pd.Timestamp("2026-02-26"), "AAA"], px.at[pd.Timestamp("2026-04-01"), "AAA"])
+
     def test_unknown_ticker_is_nan(self):
         px = _closes("2026-08-01")
         stock, spx, basis = _Insp(px).get_calendar_window(_row(ticker="ZZZ"), 30)

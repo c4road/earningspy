@@ -164,13 +164,23 @@ class CARMixin:
         closes = self.price_history.loc[:session, ticker].dropna()
         return float(closes.iloc[-1]) if len(closes) else np.nan
 
+    def _close_at(self, ticker: str, session: pd.Timestamp) -> float:
+        """The close on exactly ``session``; NaN when the ticker has no price that day. A delisted or
+        stale ticker must not lend an older close to a window it did not trade through."""
+        if ticker not in self.price_history.columns or session not in self.price_history.index:
+            return np.nan
+        value = self.price_history.at[session, ticker]
+        return float(value) if pd.notna(value) and value > 0 else np.nan
+
     def get_calendar_window(self, row: pd.Series, days: int) -> tuple[float, float, Optional[str]]:
         """(stock return, S&P 500 return, exit basis) over the N-calendar-day window.
 
-        Both legs start at the close on the trading day before the report. They exit at the open of
+        Both legs start at the close of the last session before the report. They exit at the open of
         the first session after report + N calendar days when the stock and the S&P 500 both have
         that open, else both at the close of the last session on or before day N, so the two legs
-        always cover the same dates. NaN (and no basis) while the window is open or prices are missing.
+        always cover the same dates. Every price is taken on its exact session: a ticker with no
+        price that day (delisted, halted, stale) gets no window rather than an older price carried
+        forward. NaN (and no basis) while the window is open or prices are missing.
         """
         earnings_date, ticker = row.name[0], row.name[1]
         try:
@@ -185,12 +195,17 @@ class CARMixin:
             return np.nan, np.nan, None
 
         legs = (ticker, SP_500_TICKER)
-        starts = [self._close_on_or_before(t, start) if t in self.price_history.columns else np.nan for t in legs]
+        sessions = self._sessions()
+        before = sessions[sessions <= start]
+        if before.empty:
+            return np.nan, np.nan, None
+        start = before.max()                      # a holiday row resolves to the session before it
+        starts = [self._close_at(t, start) for t in legs]
         opens = [self._open_at(t, exit_session) for t in legs]
         if all(pd.notna(v) for v in opens):
             ends, basis = opens, "open"
         else:
-            ends = [self._close_on_or_before(t, last) if t in self.price_history.columns else np.nan for t in legs]
+            ends = [self._close_at(t, last) for t in legs]
             basis = "close"
 
         def _ret(a, b):
