@@ -104,6 +104,8 @@ inspector = inspector.inspect(days=60, post_earnings=True) \
 #   SPX_N_CAL_RET  the S&P 500 over the same dates
 #   CAR_N_CAL      1+N_CAL_RET - CAPM_N;  BHAR_N_CAL  1+N_CAL_RET - MARK_EXP_N
 #   N_CAL_EXIT     "open" or "close", the exit the window used
+#   Sessions are the S&P 500's trading days. A micro cap (< $300M) whose price rises 3x or more
+#   in one session inside the window is left empty: Yahoo often leaves its reverse split unadjusted.
 
 # Put the updated calendar back on local storage
 inspector.calendar.to_csv('post_earnings.csv')

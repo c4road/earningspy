@@ -37,6 +37,11 @@ SPX_CAL_RET_KEY='SPX_{}_CAL_RET'
 CAR_CAL_KEY='CAR_{}_CAL'
 BHAR_CAL_KEY='BHAR_{}_CAL'
 CAL_EXIT_KEY='{}_CAL_EXIT'
+# A micro cap whose closes rise this many times in one session inside a calendar window: Yahoo
+# often leaves a reverse split unadjusted across that day, so the window is left empty.
+SPLIT_GUARD_MAX_MARKET_CAP = 300_000_000
+SPLIT_GUARD_JUMP = 3.0
+MARKET_CAP_KEY = 'MARKET_CAP'
 
 AVAILABLE_CHECK_COLUMNS = [
     EXP_RET_KEY,

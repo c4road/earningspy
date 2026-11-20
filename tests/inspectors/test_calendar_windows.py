@@ -71,6 +71,38 @@ class TestWindowDates:
         _, exit_session, _ = _Insp(px)._resolve_calendar_window(REPORT, 30)
         assert exit_session == pd.Timestamp("2026-04-03")
 
+    def test_holiday_row_with_no_prices_is_not_the_exit(self):
+        # Yahoo returns a row on a market holiday with every price null; it is not a session.
+        px = _closes("2026-08-01")
+        px.loc[pd.Timestamp("2026-04-02")] = np.nan                 # holiday right after day 30
+        op = _opens(_closes("2026-08-01"))
+        op.loc[pd.Timestamp("2026-04-02")] = np.nan
+        insp = _Insp(px, op)
+        _, exit_session, last = insp._resolve_calendar_window(REPORT, 30)
+        assert exit_session == pd.Timestamp("2026-04-03") and last == pd.Timestamp("2026-04-01")
+        stock, spx, basis = insp.get_calendar_window(_row(), 30)
+        assert basis == "open"
+        assert stock == _ret(px.at[pd.Timestamp("2026-02-27"), "AAA"], op.at[pd.Timestamp("2026-04-03"), "AAA"])
+
+    def test_a_vix_print_on_a_holiday_is_not_a_session(self):
+        px = _closes("2026-08-01")
+        px.loc[pd.Timestamp("2026-04-02")] = np.nan
+        px.loc[pd.Timestamp("2026-04-02"), "^VIX"] = 16.0            # Cboe extended hours
+        _, exit_session, _ = _Insp(px)._resolve_calendar_window(REPORT, 30)
+        assert exit_session == pd.Timestamp("2026-04-03")
+
+    def test_holiday_on_day_n_falls_back_to_the_session_before(self):
+        px = _closes("2026-08-01")
+        px.loc[pd.Timestamp("2026-04-01")] = np.nan                 # day 30 itself a holiday
+        _, exit_session, last = _Insp(px)._resolve_calendar_window(REPORT, 30)
+        assert last == pd.Timestamp("2026-03-31") and exit_session == pd.Timestamp("2026-04-02")
+
+    def test_trailing_empty_row_does_not_close_the_window(self):
+        px = _closes("2026-04-02")
+        px.loc[pd.Timestamp("2026-04-02")] = np.nan                 # only an empty row after day 30
+        with pytest.raises(WindowNotClosed):
+            _Insp(px)._resolve_calendar_window(REPORT, 30)
+
     def test_open_until_the_exit_session_exists(self):
         px = _closes("2026-04-01")                                  # day 30 itself is the last price
         with pytest.raises(WindowNotClosed):
@@ -116,8 +148,68 @@ class TestReturns:
 
     def test_unknown_ticker_is_nan(self):
         px = _closes("2026-08-01")
-        stock, _, basis = _Insp(px).get_calendar_window(_row(ticker="ZZZ"), 30)
-        assert np.isnan(stock) and basis is None
+        stock, spx, basis = _Insp(px).get_calendar_window(_row(ticker="ZZZ"), 30)
+        assert np.isnan(stock) and np.isnan(spx) and basis is None
+
+    def test_no_stock_price_blanks_the_market_leg(self):
+        px = _closes("2026-08-01")
+        px.loc[:pd.Timestamp("2026-05-01"), "AAA"] = np.nan          # delisted history: no start price
+        stock, spx, basis = _Insp(px).get_calendar_window(_row(), 30)
+        assert np.isnan(stock) and np.isnan(spx) and basis is None
+
+
+class TestSplitGuard:
+    """Yahoo often leaves a micro cap's reverse split unadjusted: the window is left empty."""
+
+    def _px(self, factor, day="2026-03-16"):
+        px = _closes("2026-08-01")
+        px.loc[pd.Timestamp(day):, "AAA"] *= factor
+        return px
+
+    def _row(self, cap):
+        r = _row()
+        r["MARKET_CAP"] = cap
+        return r
+
+    def test_micro_cap_with_a_twenty_fold_day_is_left_empty(self):
+        stock, spx, basis = _Insp(self._px(20.0)).get_calendar_window(self._row(80e6), 30)
+        assert np.isnan(stock) and np.isnan(spx) and basis is None
+
+    def test_unknown_market_cap_is_guarded(self):
+        stock, _, _ = _Insp(self._px(20.0)).get_calendar_window(_row(), 30)
+        assert np.isnan(stock)
+
+    def test_larger_company_keeps_its_move(self):
+        stock, _, basis = _Insp(self._px(3.5)).get_calendar_window(self._row(800e6), 30)
+        assert stock > 2.0 and basis == "close"
+
+    def test_a_collapse_is_kept(self):
+        stock, _, _ = _Insp(self._px(0.2)).get_calendar_window(self._row(80e6), 30)
+        assert -0.9 < stock < -0.7
+
+    def test_a_move_below_the_threshold_is_kept(self):
+        stock, _, _ = _Insp(self._px(2.5)).get_calendar_window(self._row(80e6), 30)
+        assert stock > 1.0
+
+    def test_a_guarded_window_logs_an_informative_warning(self, caplog):
+        with caplog.at_level("WARNING", logger="earningspy.inspectors.mixins"):
+            _Insp(self._px(20.0)).get_calendar_window(self._row(80e6), 30)
+        msg = " ".join(r.getMessage() for r in caplog.records if r.levelname == "WARNING")
+        for part in ("SPLIT GUARD", "AAA", "30-calendar-day", "2026-03-02", "EMPTY", "$80.0M",
+                     "$300M", "jumps 20.", "in one session", "2026-03-13", "2026-03-16", "reverse split", "%"):
+            assert part in msg, part
+
+    def test_no_warning_when_nothing_is_guarded(self, caplog):
+        with caplog.at_level("WARNING", logger="earningspy.inspectors.mixins"):
+            _Insp(self._px(20.0)).get_calendar_window(self._row(800e6), 30)
+        assert not [r for r in caplog.records if "SPLIT GUARD" in r.getMessage()]
+
+    def test_the_jump_into_the_exit_open_counts(self):
+        px = _closes("2026-08-01")
+        op = _opens(px)
+        op.loc[pd.Timestamp("2026-04-02"), "AAA"] *= 20                # only the exit open jumps
+        stock, _, _ = _Insp(px, op).get_calendar_window(self._row(80e6), 30)
+        assert np.isnan(stock)
 
 
 TODAY = pd.Timestamp.today().normalize()
@@ -161,6 +253,19 @@ class TestInspector:
     def test_old_bronze_without_calendar_columns_is_eligible(self):
         cal = _calendar([40], **{"1+30_RET": [0.01]})
         assert len(PEADInspector(calendar=cal)._get_affected_rows(30)) == 1
+
+    def test_inspect_logs_a_summary_of_guarded_windows(self, caplog):
+        px = self._closes()
+        report = TODAY - pd.Timedelta(days=35)
+        px.loc[report + pd.Timedelta(days=10):, "AAA"] *= 20
+        cal = _calendar([35], **{"1+30_RET": [np.nan], "MARKET_CAP": [50e6]})
+        with caplog.at_level("WARNING"):
+            insp = PEADInspector(calendar=cal, price_history=px, open_history=_opens(px)).inspect(
+                days=30, reuse_timeseries=True)
+        summary = [r.getMessage() for r in caplog.records if r.name == "earningspy.inspectors.pead"]
+        assert summary and "1 of 1 30-calendar-day windows left empty" in summary[0]
+        assert f"AAA {report.date()}" in summary[0]
+        assert pd.isna(insp.calendar.reset_index().iloc[0]["1+30_CAL_RET"])
 
     def test_columns_exist_when_no_row_is_affected(self):
         px = self._closes()
