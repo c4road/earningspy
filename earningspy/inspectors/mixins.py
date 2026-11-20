@@ -107,6 +107,77 @@ class CARMixin:
             return np.nan
 
 
+    def _resolve_calendar_window(self, earnings_date: pd.Timestamp, days: int) -> tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp]:
+        """(start, exit, last) sessions of the N-calendar-day window.
+
+        start  the trading day before the report (the same start as the business-day window)
+        exit   the first session after report + N calendar days: its open is the pessimistic exit
+        last   the last session on or before report + N calendar days: its close is the fallback exit
+
+        Raises WindowNotClosed while the exit session is not in the price history yet.
+        """
+        earnings_ts = self._coerce_price_timestamp(earnings_date)
+        start = self._resolve_price_date(earnings_ts - BDay(1), method="pad", fallback_method="backfill")
+        day_n = earnings_ts + pd.Timedelta(days=days)
+        index = self.price_history.index
+        after = index[index > day_n]
+        if after.empty:
+            raise WindowNotClosed(
+                f"calendar window {earnings_ts.date()} + {days}d: no session after {day_n.date()} "
+                f"(last price {index.max().date()})"
+            )
+        last = index[index <= day_n].max()
+        return start, after[0], last
+
+    def _open_at(self, ticker: str, session: pd.Timestamp) -> float:
+        opens = getattr(self, "open_history", None)
+        if opens is None or ticker not in opens.columns or session not in opens.index:
+            return np.nan
+        value = opens.at[session, ticker]
+        return float(value) if pd.notna(value) and value > 0 else np.nan
+
+    def _close_on_or_before(self, ticker: str, session: pd.Timestamp) -> float:
+        closes = self.price_history.loc[:session, ticker].dropna()
+        return float(closes.iloc[-1]) if len(closes) else np.nan
+
+    def get_calendar_window(self, row: pd.Series, days: int) -> tuple[float, float, Optional[str]]:
+        """(stock return, S&P 500 return, exit basis) over the N-calendar-day window.
+
+        Both legs start at the close on the trading day before the report. They exit at the open of
+        the first session after report + N calendar days when the stock and the S&P 500 both have
+        that open, else both at the close of the last session on or before day N, so the two legs
+        always cover the same dates. NaN (and no basis) while the window is open or prices are missing.
+        """
+        earnings_date, ticker = row.name[0], row.name[1]
+        try:
+            start, exit_session, last = self._resolve_calendar_window(earnings_date, days)
+        except WindowNotClosed:
+            return np.nan, np.nan, None
+        except KeyError as exc:
+            print(f"❌ Could not resolve calendar window for {ticker}: {exc}")
+            return np.nan, np.nan, None
+
+        if ticker not in self.price_history.columns:
+            return np.nan, np.nan, None
+
+        legs = (ticker, SP_500_TICKER)
+        starts = [self._close_on_or_before(t, start) if t in self.price_history.columns else np.nan for t in legs]
+        opens = [self._open_at(t, exit_session) for t in legs]
+        if all(pd.notna(v) for v in opens):
+            ends, basis = opens, "open"
+        else:
+            ends = [self._close_on_or_before(t, last) if t in self.price_history.columns else np.nan for t in legs]
+            basis = "close"
+
+        def _ret(a, b):
+            return np.round((b - a) / a, 4) if pd.notna(a) and pd.notna(b) and a > 0 else np.nan
+
+        stock_ret, spx_ret = _ret(starts[0], ends[0]), _ret(starts[1], ends[1])
+        if pd.isna(stock_ret):
+            return np.nan, spx_ret, None
+        return stock_ret, spx_ret, basis
+
+
     def get_capm(self, row: pd.Series, days: int = 0) -> float:
 
         rf_label = RF_KEY.format(days).strip()
@@ -237,16 +308,21 @@ class TimeSeriesMixin:
         from_: str = "5y",
         async_: bool = False,
     ) -> pd.DataFrame:
+        """Daily closes for ``assets`` plus the market series. The opens from the same responses
+        are kept on ``self.open_history`` (the calendar windows exit at an open)."""
 
         market_assets = MARKET_DATA_TICKERS
+        fetch = async_get_portfolio if async_ else get_portfolio
+        price_history, open_history = fetch(list(assets) + market_assets, from_=from_, opens=True)
 
-        if async_:
-            price_history = async_get_portfolio(list(assets) + market_assets, from_=from_)
-        else:
-            price_history = get_portfolio(list(assets) + market_assets, from_=from_)        
-        price_history.index = pd.to_datetime(price_history.index, errors='coerce')
-        price_history = price_history[~price_history.index.isna()]
-        price_history = price_history[~price_history.index.duplicated(keep='first')]        
-        price_history = price_history.sort_index()
+        price_history = self._clean_history(price_history)
+        self.open_history = self._clean_history(open_history).reindex(price_history.index)
 
         return price_history
+
+    @staticmethod
+    def _clean_history(frame: pd.DataFrame) -> pd.DataFrame:
+        frame.index = pd.to_datetime(frame.index, errors='coerce')
+        frame = frame[~frame.index.isna()]
+        frame = frame[~frame.index.duplicated(keep='first')]
+        return frame.sort_index()

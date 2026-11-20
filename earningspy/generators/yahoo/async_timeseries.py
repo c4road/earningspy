@@ -96,8 +96,9 @@ async def get_one_ticker_async(session, asset, from_='3m', start_date=None, end_
         print(f"Error fetching data for {asset}: {str(e)}")
         return asset, None
 
-async def get_portfolio_async(assets, from_='3m', start_date=None, end_date=dt.now().date()):
+async def get_portfolio_async(assets, from_='3m', start_date=None, end_date=dt.now().date(), opens=False):
     close_frames = {}
+    open_frames = {}
     not_found = []
     seen_assets = set()
     assets = list(assets)
@@ -125,6 +126,10 @@ async def get_portfolio_async(assets, from_='3m', start_date=None, end_date=dt.n
 
             close_frames[asset] = close_frame
             seen_assets.add(asset)
+            if opens:
+                open_frame = _open_frame(ticker_data, asset)
+                if open_frame is not None:
+                    open_frames[asset] = open_frame
             
             # Random sleep to avoid rate limiting
             await asyncio.sleep(random.uniform(0.5, 1.0))
@@ -135,6 +140,8 @@ async def get_portfolio_async(assets, from_='3m', start_date=None, end_date=dt.n
     portfolio = _finalize_portfolio([close_frames[asset] for asset in assets if asset in close_frames])
     if len(not_found):
         print(f"Not found assets: {len(set(not_found))}, {set(not_found)}")
+    if opens:
+        return portfolio, _finalize_opens([open_frames[a] for a in assets if a in open_frames], portfolio)
     return portfolio
 
 def prepare_data(data, ticker):
@@ -143,10 +150,29 @@ def prepare_data(data, ticker):
     return data.round(2)
 
 
-def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date()):
+def _open_frame(data, ticker):
+    """The asset's daily opens as a one-column frame, or None when the response has none."""
+    if 'open' not in data.columns:
+        return None
+    try:
+        return _normalize_close_frame(data[['open']].rename(columns={'open': ticker}).round(2), ticker)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _finalize_opens(open_frames, closes):
+    """Opens on the closes' calendar and columns (an asset without opens is an all-NaN column)."""
+    if not open_frames:
+        return pd.DataFrame(index=closes.index, columns=closes.columns, dtype=float)
+    return _finalize_portfolio(open_frames).reindex(index=closes.index, columns=closes.columns)
+
+
+def get_portfolio(assets, from_='3m', start_date=None, end_date=dt.now().date(), opens=False):
     """
-    Synchronous wrapper for the asynchronous get_portfolio_async function.
+    Synchronous wrapper for the asynchronous get_portfolio_async function. With ``opens=True``
+    returns ``(closes, opens)``.
     """
     loop = asyncio.get_event_loop()
-    portfolio = loop.run_until_complete(get_portfolio_async(assets, from_=from_, start_date=start_date, end_date=end_date))
+    portfolio = loop.run_until_complete(get_portfolio_async(assets, from_=from_, start_date=start_date,
+                                                            end_date=end_date, opens=opens))
     return portfolio

@@ -90,3 +90,26 @@ def test_get_one_ticker_returns_none_for_yahoo_error_payload(monkeypatch, caplog
 
     assert data is None
     assert 'Yahoo payload parsing failed for SPY' in caplog.text
+
+
+def test_get_portfolio_returns_opens_from_the_same_response(monkeypatch):
+    payload = yahoo_raw_response_data()
+    calls = []
+
+    def fake_fetch(session, asset, *args, **kwargs):
+        calls.append(asset)
+        quote = payload['chart']['result'][0]['indicators']['quote'][0]
+        frame = pd.DataFrame(quote, index=pd.to_datetime(['2024-03-01', '2024-03-04']))
+        frame.index.name = 'Date'
+        return asset, frame
+
+    monkeypatch.setattr(time_series, '_fetch_ticker_data', fake_fetch)
+
+    closes = time_series.get_portfolio(['SPY'], start_date='2024-03-01', end_date='2024-03-05')
+    closes2, opens = time_series.get_portfolio(['SPY'], start_date='2024-03-01', end_date='2024-03-05', opens=True)
+
+    assert len(calls) == 2                                  # one request per call, opens included
+    pd.testing.assert_frame_equal(closes, closes2)
+    assert list(opens.columns) == ['SPY'] and opens.index.equals(closes.index)
+    expected = payload['chart']['result'][0]['indicators']['quote'][0]['open']
+    assert opens['SPY'].tolist() == [round(v, 2) for v in expected]

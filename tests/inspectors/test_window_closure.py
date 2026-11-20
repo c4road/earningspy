@@ -97,6 +97,8 @@ class TestEligibility:
     def test_filled_rows_are_not_recomputed(self):
         cal = _calendar([70, 100])
         cal.loc[cal["TICKER"] == "T100", "1+60_RET"] = 0.05
+        cal["1+60_CAL_RET"] = np.nan
+        cal.loc[cal["TICKER"] == "T100", "1+60_CAL_RET"] = 0.04
         insp = PEADInspector(calendar=cal)
         assert set(insp._get_affected_rows(60).index.get_level_values("TICKER")) == {"T70"}
 

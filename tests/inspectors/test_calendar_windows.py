@@ -1,0 +1,171 @@
+"""
+Calendar-day windows (30 and 60 days), computed beside the business-day ones.
+
+Start: the close on the trading day before the report. Exit: the open of the first session after
+report + N calendar days, or, without that open, the close of the last session on or before day N.
+The S&P 500 is measured over the same dates and on the same basis.
+
+All pure/in-memory: no network.
+"""
+import numpy as np
+import pandas as pd
+import pytest
+from pandas.tseries.offsets import BDay
+
+from earningspy.inspectors.mixins import CARMixin, WindowNotClosed
+from earningspy.inspectors.pead import PEADInspector
+
+REPORT = pd.Timestamp("2026-03-02")       # a Monday; +30 days = Wed 1 Apr, +60 days = Fri 1 May
+
+
+def _closes(end: str, holidays=()) -> pd.DataFrame:
+    idx = pd.bdate_range("2025-01-01", end)
+    idx = idx[~idx.isin(pd.to_datetime(list(holidays)))]
+    rng = np.random.RandomState(42)
+    stock = 100 * np.cumprod(1 + rng.normal(0, 0.01, len(idx)))
+    market = 5000 * np.cumprod(1 + rng.normal(0, 0.008, len(idx)))
+    return pd.DataFrame({"AAA": stock, "^GSPC": market, "^TNX": 4.0, "^VIX": 15.0, "^RUT": 2000.0}, index=idx)
+
+
+def _opens(closes: pd.DataFrame) -> pd.DataFrame:
+    return closes.shift(1) * 1.002            # open a touch above the previous close
+
+
+class _Insp(CARMixin):
+    def __init__(self, closes, opens=None):
+        self.price_history = closes
+        self.open_history = opens
+
+
+def _row(report=REPORT, ticker="AAA"):
+    return pd.Series({"BETA": 1.2, "IS_AMC": 0}, name=(report, ticker))
+
+
+def _ret(a, b):
+    return round((b - a) / a, 4)
+
+
+class TestWindowDates:
+    def test_exit_is_the_session_after_day_n(self):
+        px = _closes("2026-08-01")
+        start, exit_session, last = _Insp(px)._resolve_calendar_window(REPORT, 30)
+        assert start == pd.Timestamp("2026-02-27")                  # Friday before the Monday report
+        assert last == pd.Timestamp("2026-04-01")                   # day 30, a Wednesday
+        assert exit_session == pd.Timestamp("2026-04-02")           # next session's open
+
+    def test_day_n_on_a_friday_exits_monday(self):
+        px = _closes("2026-08-01")
+        _, exit_session, last = _Insp(px)._resolve_calendar_window(REPORT, 60)
+        assert last == pd.Timestamp("2026-05-01")                   # Friday
+        assert exit_session == pd.Timestamp("2026-05-04")           # Monday
+
+    def test_day_n_on_a_weekend(self):
+        report = pd.Timestamp("2026-03-04")                         # Wed; +60 = Sun 3 May
+        px = _closes("2026-08-01")
+        _, exit_session, last = _Insp(px)._resolve_calendar_window(report, 60)
+        assert last == pd.Timestamp("2026-05-01")
+        assert exit_session == pd.Timestamp("2026-05-04")
+
+    def test_holiday_after_day_n_moves_the_exit(self):
+        px = _closes("2026-08-01", holidays=["2026-04-02"])
+        _, exit_session, _ = _Insp(px)._resolve_calendar_window(REPORT, 30)
+        assert exit_session == pd.Timestamp("2026-04-03")
+
+    def test_open_until_the_exit_session_exists(self):
+        px = _closes("2026-04-01")                                  # day 30 itself is the last price
+        with pytest.raises(WindowNotClosed):
+            _Insp(px)._resolve_calendar_window(REPORT, 30)
+        stock, spx, basis = _Insp(px).get_calendar_window(_row(), 30)
+        assert np.isnan(stock) and np.isnan(spx) and basis is None
+
+    def test_closes_weeks_before_the_business_day_window(self):
+        px = _closes((REPORT + pd.Timedelta(days=64)).strftime("%Y-%m-%d"))      # to Mon 4 May
+        insp = _Insp(px, _opens(px))
+        assert not np.isnan(insp.get_calendar_window(_row(), 60)[0])
+        assert np.isnan(insp.get_window_pct_change(_row(), 60))     # 60 business days not closed
+
+
+class TestReturns:
+    def test_exit_at_the_next_open_for_both_legs(self):
+        px = _closes("2026-08-01")
+        op = _opens(px)
+        stock, spx, basis = _Insp(px, op).get_calendar_window(_row(), 30)
+        start, exit_session = pd.Timestamp("2026-02-27"), pd.Timestamp("2026-04-02")
+        assert basis == "open"
+        assert stock == _ret(px.at[start, "AAA"], op.at[exit_session, "AAA"])
+        assert spx == _ret(px.at[start, "^GSPC"], op.at[exit_session, "^GSPC"])
+
+    def test_without_opens_exit_at_the_close_on_or_before_day_n(self):
+        px = _closes("2026-08-01")
+        stock, spx, basis = _Insp(px).get_calendar_window(_row(), 60)
+        start, last = pd.Timestamp("2026-02-27"), pd.Timestamp("2026-05-01")
+        assert basis == "close"
+        assert stock == _ret(px.at[start, "AAA"], px.at[last, "AAA"])
+        assert spx == _ret(px.at[start, "^GSPC"], px.at[last, "^GSPC"])
+
+    @pytest.mark.parametrize("bad", [np.nan, 0.0])
+    def test_a_missing_open_on_either_leg_moves_both_to_the_close(self, bad):
+        px = _closes("2026-08-01")
+        op = _opens(px)
+        op.at[pd.Timestamp("2026-04-02"), "^GSPC"] = bad
+        stock, spx, basis = _Insp(px, op).get_calendar_window(_row(), 30)
+        start, last = pd.Timestamp("2026-02-27"), pd.Timestamp("2026-04-01")
+        assert basis == "close"
+        assert stock == _ret(px.at[start, "AAA"], px.at[last, "AAA"])
+        assert spx == _ret(px.at[start, "^GSPC"], px.at[last, "^GSPC"])
+
+    def test_unknown_ticker_is_nan(self):
+        px = _closes("2026-08-01")
+        stock, _, basis = _Insp(px).get_calendar_window(_row(ticker="ZZZ"), 30)
+        assert np.isnan(stock) and basis is None
+
+
+TODAY = pd.Timestamp.today().normalize()
+
+
+def _calendar(days_ago, **cols):
+    """One AAA row per report ``days_ago`` before today (the inspector recomputes DAYS_LEFT)."""
+    rows = [{"EARNINGS_DATE": TODAY - pd.Timedelta(days=d), "TICKER": "AAA", "IS_AMC": 0, "BETA": 1.2,
+             **{k: v[n] for k, v in cols.items()}} for n, d in enumerate(days_ago)]
+    return pd.DataFrame(rows).set_index("EARNINGS_DATE")
+
+
+class TestInspector:
+    def _closes(self):
+        return _closes(TODAY.strftime("%Y-%m-%d"))
+
+    def test_inspect_fills_both_families(self):
+        px = self._closes()
+        report = TODAY - pd.Timedelta(days=35)
+        insp = PEADInspector(calendar=_calendar([35], **{"1+30_RET": [np.nan]}), price_history=px, open_history=_opens(px))
+        insp = insp.inspect(days=30, reuse_timeseries=True)
+        row = insp.calendar.reset_index().iloc[0]
+        stock, spx, basis = _Insp(px, _opens(px)).get_calendar_window(_row(report=report), 30)
+        assert basis == "open"
+        assert row["1+30_CAL_RET"] == stock and row["SPX_30_CAL_RET"] == spx and row["30_CAL_EXIT"] == "open"
+        assert row["CAR_30_CAL"] == round(stock - row["CAPM_30"], 4)
+        assert row["BHAR_30_CAL"] == round(stock - row["MARK_EXP_30"], 4)
+        assert np.isnan(row["1+30_RET"])        # 30 business days have not closed after 35 calendar days
+
+    def test_three_day_window_has_no_calendar_columns(self):
+        px = self._closes()
+        insp = PEADInspector(calendar=_calendar([10], **{"1+3_RET": [np.nan]}), price_history=px, open_history=_opens(px))
+        insp = insp.inspect(days=3, reuse_timeseries=True)
+        assert "1+3_CAL_RET" not in insp.calendar.columns
+
+    def test_row_stays_eligible_while_the_calendar_column_is_empty(self):
+        cal = _calendar([40, 41], **{"1+30_RET": [0.01, 0.02], "1+30_CAL_RET": [np.nan, 0.03]})
+        affected = PEADInspector(calendar=cal)._get_affected_rows(30)
+        assert list(affected.index.get_level_values(0)) == [TODAY - pd.Timedelta(days=40)]
+
+    def test_old_bronze_without_calendar_columns_is_eligible(self):
+        cal = _calendar([40], **{"1+30_RET": [0.01]})
+        assert len(PEADInspector(calendar=cal)._get_affected_rows(30)) == 1
+
+    def test_columns_exist_when_no_row_is_affected(self):
+        px = self._closes()
+        cal = _calendar([5], **{"1+30_RET": [np.nan]})                # too recent for a 30-day window
+        insp = PEADInspector(calendar=cal, price_history=px, open_history=_opens(px))
+        insp = insp.inspect(days=30, reuse_timeseries=True)
+        for col in ("1+30_CAL_RET", "SPX_30_CAL_RET", "CAR_30_CAL", "BHAR_30_CAL", "30_CAL_EXIT"):
+            assert col in insp.calendar.columns
